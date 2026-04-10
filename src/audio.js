@@ -112,13 +112,23 @@ export class AudioEngine {
     }
   }
 
-  /** Stop everything. */
+  /** Stop everything. _songBuffer is intentionally preserved for retry. */
   stop() {
     this._stopSource();
     this._stopDemoNodes();
     this.playing = false;
     this._pausedAt = 0;
     this.songStartTime = 0;
+  }
+
+  /** Whether an uploaded audio file is loaded and ready. */
+  get hasUploadedAudio() {
+    return this._songBuffer !== null;
+  }
+
+  /** Clear the uploaded audio buffer (call when user discards the upload). */
+  clearUploadedAudio() {
+    this._songBuffer = null;
   }
 
   // ---- Hit sounds ----

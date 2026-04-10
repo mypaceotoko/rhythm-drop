@@ -32,10 +32,46 @@
 
       <button class="btn btn-primary" id="btn-start">PLAY</button>
 
-      <!-- Future: Upload music file -->
+      <!-- Music file upload -->
       <div class="upload-section" id="upload-section">
-        <p class="upload-label">音楽ファイルをアップロード（近日対応）</p>
-        <button class="btn btn-secondary" id="btn-upload" disabled>音楽を選ぶ</button>
+        <div class="upload-divider"><span>または自分の曲でプレイ</span></div>
+
+        <!-- Hidden file input -->
+        <input type="file" id="file-input" accept="audio/*" hidden />
+
+        <!-- Drop zone -->
+        <div class="drop-zone" id="drop-zone">
+          <div class="drop-icon">🎵</div>
+          <p class="drop-main">音楽ファイルをドロップ</p>
+          <p class="drop-sub">MP3 / WAV / OGG / AAC</p>
+          <button class="btn btn-secondary" id="btn-upload" type="button">ファイルを選ぶ</button>
+        </div>
+
+        <!-- Settings panel (shown after file selection) -->
+        <div class="upload-settings" id="upload-settings" hidden>
+          <div class="upload-file-name" id="upload-filename">—</div>
+          <div class="setting-row">
+            <label class="setting-label" for="input-title">曲名</label>
+            <input type="text" id="input-title" class="setting-input" placeholder="曲名を入力" />
+          </div>
+          <div class="setting-row">
+            <label class="setting-label" for="input-bpm">BPM</label>
+            <div class="bpm-row">
+              <input type="range" id="input-bpm-range" min="60" max="240" value="120" class="bpm-range" />
+              <input type="number" id="input-bpm" class="setting-input bpm-num" value="120" min="60" max="240" />
+            </div>
+          </div>
+          <div class="setting-row">
+            <label class="setting-label" for="input-difficulty">難易度</label>
+            <select id="input-difficulty" class="setting-input">
+              <option value="EASY">EASY</option>
+              <option value="NORMAL" selected>NORMAL</option>
+              <option value="HARD">HARD</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" id="btn-play-upload">この曲でプレイ</button>
+          <button class="btn btn-ghost btn-sm" id="btn-cancel-upload" type="button">キャンセル</button>
+        </div>
       </div>
     </div>
   </div>

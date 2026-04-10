@@ -38,17 +38,18 @@ export async function loadChart(source) {
 }
 
 /**
- * Generate a simple BPM-based chart with notes at regular intervals.
- * Every beat or subdivision gets a note on a pseudo-random lane.
+ * Generate a musical BPM-based chart.
  *
- * This is intentionally simple — it's the "entry point" for auto-generation.
- * In a future version, replace or augment with audio-analysis results.
+ * Design philosophy:
+ *  - Notes follow repeating 8-step phrases that feel natural to tap
+ *  - Difficulty controls note density and simultaneous hits
+ *  - A 2-beat intro gives players time to prepare
+ *  - Future: replace with audio-analysis onsets for true beat tracking
  *
  * @param {object} opts
  * @param {string} opts.title
  * @param {number} opts.bpm
  * @param {number} opts.durationMs   - total chart duration in ms
- * @param {number} [opts.subdivision] - notes per beat (default: 2)
  * @param {string} [opts.difficulty] - 'EASY'|'NORMAL'|'HARD'
  * @returns {object} chart
  */
@@ -56,25 +57,60 @@ export function generateBPMChart({
   title = 'Auto Chart',
   bpm = 120,
   durationMs = 30000,
-  subdivision = 2,
   difficulty = 'NORMAL',
 }) {
   const beatMs = (60 / bpm) * 1000;
-  const stepMs = beatMs / subdivision;
 
-  // Skip first 2 beats (countdown)
+  // Per-difficulty settings
+  const DIFF = {
+    EASY:   { step: 1.0,  restRate: 0.25, dualRate: 0.00, patterns: EASY_PATTERNS },
+    NORMAL: { step: 0.5,  restRate: 0.20, dualRate: 0.08, patterns: NORMAL_PATTERNS },
+    HARD:   { step: 0.25, restRate: 0.12, dualRate: 0.18, patterns: HARD_PATTERNS },
+  };
+  const cfg = DIFF[difficulty] || DIFF.NORMAL;
+  const stepMs = beatMs * cfg.step;
+
+  // 2-beat intro (let song establish itself before notes start)
   const startOffset = beatMs * 2;
   const notes = [];
 
-  // Simple pattern: cycle through lanes with slight randomness
-  const pattern = [2, 0, 4, 1, 3, 2, 3, 1, 4, 0]; // base lane pattern
-  let patternIdx = 0;
+  let phraseStep = 0;   // position within 8-step phrase
+  let phraseIdx  = 0;   // which pattern we're on
+  let prevLane   = -1;  // avoid same-lane repeats at HARD
 
-  for (let t = startOffset; t < durationMs - beatMs; t += stepMs) {
-    const lane = pattern[patternIdx % pattern.length];
-    patternIdx++;
+  for (let t = startOffset; t < durationMs - beatMs * 2; t += stepMs) {
+    // Rest: skip this step
+    if (Math.random() < cfg.restRate) {
+      phraseStep++;
+      if (phraseStep >= 8) { phraseStep = 0; phraseIdx++; }
+      continue;
+    }
+
+    // Pick lane from pattern
+    const pats = cfg.patterns;
+    const pat  = pats[phraseIdx % pats.length];
+    let lane   = pat[phraseStep % pat.length];
+
+    // At HARD, avoid triple consecutive same-lane
+    if (difficulty === 'HARD' && lane === prevLane && Math.random() < 0.6) {
+      lane = (lane + 2) % LANE_COUNT;
+    }
+
     notes.push({ time: Math.round(t), lane });
+    prevLane = lane;
+
+    // Dual-note (simultaneous hit on a different lane)
+    if (Math.random() < cfg.dualRate) {
+      const other = DUAL_PARTNER[lane];
+      notes.push({ time: Math.round(t), lane: other });
+    }
+
+    phraseStep++;
+    if (phraseStep >= 8) { phraseStep = 0; phraseIdx++; }
   }
+
+  // Sort by time then lane
+  notes.sort((a, b) => a.time - b.time || a.lane - b.lane);
 
   return {
     id: `auto_${Date.now()}`,
@@ -83,10 +119,45 @@ export function generateBPMChart({
     bpm,
     difficulty,
     totalNotes: notes.length,
-    audioFile: null,
+    audioFile: 'uploaded',
+    audioDurationMs: durationMs,
     notes,
   };
 }
+
+// ---- Lane pattern tables ----
+
+const LANE_COUNT = 5;
+
+// Symmetric partner for dual-note hits
+const DUAL_PARTNER = [4, 3, 0, 1, 0]; // lane → paired lane
+
+// Each pattern is a sequence of lane indices for one 8-step phrase
+const EASY_PATTERNS = [
+  [2, 0, 2, 4, 2, 0, 2, 4],   // center + alternating edges
+  [0, 2, 4, 2, 0, 2, 4, 2],   // sweep
+  [2, 1, 2, 3, 2, 1, 2, 3],   // center + inner
+  [0, 1, 2, 3, 4, 3, 2, 1],   // staircase
+];
+
+const NORMAL_PATTERNS = [
+  [2, 0, 1, 2, 4, 2, 3, 2],   // hub-and-spoke
+  [0, 2, 4, 2, 1, 2, 3, 2],
+  [1, 3, 0, 4, 2, 0, 4, 2],   // criss-cross
+  [2, 0, 2, 4, 1, 3, 2, 0],
+  [0, 1, 2, 1, 4, 3, 2, 3],   // wave
+  [2, 4, 2, 0, 3, 1, 2, 4],
+];
+
+const HARD_PATTERNS = [
+  [0, 2, 1, 3, 2, 4, 3, 2],   // dense weave
+  [2, 0, 4, 1, 3, 0, 4, 2],
+  [1, 2, 3, 2, 1, 0, 2, 4],
+  [4, 2, 0, 1, 3, 2, 4, 0],
+  [0, 1, 2, 3, 4, 2, 1, 0],   // fast staircase
+  [2, 1, 0, 2, 4, 3, 2, 1],
+  [3, 1, 4, 0, 2, 4, 1, 3],   // random-feeling but predictable
+];
 
 /**
  * Stub for future audio-analysis-based chart generation.

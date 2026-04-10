@@ -13,6 +13,8 @@ import { Renderer } from './renderer.js';
 import { AudioEngine } from './audio.js';
 import { Effects } from './effects.js';
 
+// AudioEngine is injected from outside so a single context persists across retries
+
 // ---- Constants ----
 const LANE_COUNT = 5;
 const JUDGMENT = {
@@ -60,10 +62,14 @@ export class Game {
    * @param {HTMLElement} elements.laneOverlay
    * @param {HTMLElement} elements.effectsLayer
    */
-  constructor(elements) {
+  /**
+   * @param {object} elements - DOM references (see property list above)
+   * @param {AudioEngine} [audioEngine] - shared engine; creates own if omitted
+   */
+  constructor(elements, audioEngine = null) {
     this.el = elements;
     this.renderer = new Renderer(elements.canvas);
-    this.audio = new AudioEngine();
+    this.audio = audioEngine || new AudioEngine();
     this.effects = new Effects(elements.effectsLayer, this.renderer);
 
     this.state = STATE.IDLE;
@@ -136,9 +142,13 @@ export class Game {
     this._updateCombo(0, false);
     this._updateGauge(GAUGE_START);
 
-    // Start audio
+    // Start audio: use uploaded file if available, otherwise synth demo
     this.audio.stop();
-    this.audio.startDemo(this.chart.bpm);
+    if (this.audio.hasUploadedAudio) {
+      this.audio.startAudio(0);
+    } else {
+      this.audio.startDemo(this.chart.bpm);
+    }
 
     this.state = STATE.PLAYING;
     this._loop();
@@ -329,9 +339,11 @@ export class Game {
   }
 
   _estimateDuration() {
+    // Use actual audio duration when available (uploaded file)
+    if (this.chart && this.chart.audioDurationMs) return this.chart.audioDurationMs;
     if (!this.chart || !this.chart.notes.length) return 30000;
     const lastNote = this.chart.notes[this.chart.notes.length - 1];
-    return lastNote.time + 3000; // 3s after last note
+    return lastNote.time + 3000; // 3s padding after last note
   }
 
   // ---- UI Helpers ----

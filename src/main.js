@@ -5,12 +5,17 @@
  *  - Screen transitions (Start → Game → Pause → Result)
  *  - Game instance lifecycle (load, start, pause, resume, retry)
  *  - InputManager lifecycle
- *  - Future: file upload UI, JSON chart loading
+ *  - Music file upload (file picker + drag-and-drop)
+ *  - BPM-based auto chart generation from uploaded audio
  */
 
 import { Game } from './game.js';
 import { InputManager } from './input.js';
-import { loadChart, normalizeChart } from './chart.js';
+import { AudioEngine } from './audio.js';
+import { loadChart, normalizeChart, generateBPMChart } from './chart.js';
+
+// ---- Shared audio engine (persists across game instances / retries) ----
+const sharedAudio = new AudioEngine();
 
 // ---- DOM references ----
 
@@ -35,8 +40,23 @@ const el = {
   hudSongName:     document.getElementById('hud-song-name'),
   hudDifficulty:   document.getElementById('hud-difficulty'),
 
-  // Buttons
+  // Start screen buttons
   btnStart:        document.getElementById('btn-start'),
+  btnUpload:       document.getElementById('btn-upload'),
+
+  // Upload UI
+  fileInput:       document.getElementById('file-input'),
+  dropZone:        document.getElementById('drop-zone'),
+  uploadSettings:  document.getElementById('upload-settings'),
+  uploadFilename:  document.getElementById('upload-filename'),
+  inputTitle:      document.getElementById('input-title'),
+  inputBpm:        document.getElementById('input-bpm'),
+  inputBpmRange:   document.getElementById('input-bpm-range'),
+  inputDifficulty: document.getElementById('input-difficulty'),
+  btnPlayUpload:   document.getElementById('btn-play-upload'),
+  btnCancelUpload: document.getElementById('btn-cancel-upload'),
+
+  // Game screen buttons
   btnPause:        document.getElementById('btn-pause'),
   btnRetry:        document.getElementById('btn-retry'),
   btnResume:       document.getElementById('btn-resume'),
@@ -44,7 +64,6 @@ const el = {
   btnPauseQuit:    document.getElementById('btn-pause-quit'),
   btnResultRetry:  document.getElementById('btn-result-retry'),
   btnResultQuit:   document.getElementById('btn-result-quit'),
-  btnUpload:       document.getElementById('btn-upload'),
 
   // Result screen
   resultTitle:     document.getElementById('result-title'),
@@ -62,17 +81,11 @@ const el = {
 let game = null;
 let input = null;
 let currentChart = null;
-let isTransitioning = false; // prevent double-click issues
+let isTransitioning = false;
 
 // ---- Screen helpers ----
 
-/**
- * Show one screen, hide all others.
- * Overlays (pause/result) stack on top of game screen.
- * @param {'start'|'game'|'pause'|'result'} name
- */
 function showScreen(name) {
-  // Always show/hide game screen independently of overlays
   if (name === 'pause' || name === 'result') {
     screens.game.classList.add('active');
     screens.pause.classList.remove('active');
@@ -80,8 +93,8 @@ function showScreen(name) {
     screens.start.classList.remove('active');
     screens[name].classList.add('active');
   } else {
-    for (const [key, el] of Object.entries(screens)) {
-      el.classList.toggle('active', key === name);
+    for (const [key, scr] of Object.entries(screens)) {
+      scr.classList.toggle('active', key === name);
     }
   }
 }
@@ -89,85 +102,64 @@ function showScreen(name) {
 // ---- Chart loading ----
 
 async function loadDemoChart() {
-  // Try loading from file first; fall back to inline data
   try {
     return normalizeChart(await loadChart('./data/demo-chart.json'));
   } catch (e) {
-    console.warn('[main] Could not fetch chart JSON, using inline fallback:', e.message);
+    console.warn('[main] Chart JSON fetch failed, using fallback:', e.message);
     return normalizeChart(getFallbackChart());
   }
 }
 
-/** Inline fallback so the game works even without a server (file:// protocol). */
 function getFallbackChart() {
   const bpm = 140;
-  const beat = (60 / bpm) * 1000; // ms per beat ≈ 428ms
-  const notes = [];
-
-  // 8 bars × 4 beats × occasional 8ths — hand-crafted pattern
+  const beat = (60 / bpm) * 1000;
   const pattern = [
-  // bar 1
-    [0, 2], [1, 2], [2, 0], [2, 4], [3, 2], [3.5, 1], [4, 3],
-  // bar 2
-    [4, 2], [5, 0], [5, 4], [6, 2], [7, 1], [7, 3],
-  // bar 3
-    [8, 2], [9, 0], [9, 4], [10, 2], [10.5, 1], [11, 3], [11.5, 2],
-  // bar 4
-    [12, 0], [12, 4], [13, 2], [14, 1], [14, 3], [15, 2],
-  // bar 5 – busier
-    [16, 2], [16.5, 0], [17, 1], [17.5, 4], [18, 2], [18.5, 3],
-    [19, 0], [19, 4], [19.5, 2],
-  // bar 6
-    [20, 1], [20, 3], [21, 2], [21.5, 0], [22, 4], [22.5, 2],
-    [23, 1], [23.5, 3],
-  // bar 7
-    [24, 0], [24, 2], [24, 4], [25, 1], [25, 3], [26, 2], [27, 0], [27, 4],
-  // bar 8 – finale
-    [28, 2], [28.5, 1], [29, 3], [29.5, 0], [29.5, 4],
-    [30, 2], [30.5, 1], [30.5, 3], [31, 0], [31, 2], [31, 4],
+    [0,2],[1,2],[2,0],[2,4],[3,2],[3.5,1],[4,3],
+    [4,2],[5,0],[5,4],[6,2],[7,1],[7,3],
+    [8,2],[9,0],[9,4],[10,2],[10.5,1],[11,3],[11.5,2],
+    [12,0],[12,4],[13,2],[14,1],[14,3],[15,2],
+    [16,2],[16.5,0],[17,1],[17.5,4],[18,2],[18.5,3],
+    [19,0],[19,4],[19.5,2],
+    [20,1],[20,3],[21,2],[21.5,0],[22,4],[22.5,2],
+    [23,1],[23.5,3],
+    [24,0],[24,2],[24,4],[25,1],[25,3],[26,2],[27,0],[27,4],
+    [28,2],[28.5,1],[29,3],[29.5,0],[29.5,4],
+    [30,2],[30.5,1],[30.5,3],[31,0],[31,2],[31,4],
   ];
-
-  for (const [beatPos, lane] of pattern) {
-    notes.push({ time: Math.round(beatPos * beat + beat * 2), lane });
-  }
-
+  const notes = pattern.map(([b, lane]) => ({
+    time: Math.round(b * beat + beat * 2), lane
+  }));
   return {
-    id: 'demo_beat',
-    title: 'Demo Beat',
-    artist: 'Rhythm Drop',
-    bpm,
-    difficulty: 'EASY',
-    totalNotes: notes.length,
-    audioFile: null,
-    notes,
+    id: 'demo_beat', title: 'Demo Beat', artist: 'Rhythm Drop',
+    bpm, difficulty: 'EASY', totalNotes: notes.length, audioFile: null, notes,
   };
 }
 
-// ---- Game lifecycle ----
+// ---- Start screen init ----
 
-async function initGame() {
-  if (!currentChart) {
-    currentChart = await loadDemoChart();
-  }
-
-  // Update start screen info
-  document.getElementById('start-song-name').textContent = currentChart.title;
-  document.getElementById('start-bpm').textContent = `BPM ${currentChart.bpm}`;
+function updateStartScreenInfo(chart) {
+  document.getElementById('start-song-name').textContent = chart.title;
+  document.getElementById('start-bpm').textContent = `BPM ${chart.bpm}`;
   const diffEl = document.getElementById('start-difficulty');
-  diffEl.textContent = currentChart.difficulty;
-  diffEl.className = `difficulty ${currentChart.difficulty.toLowerCase()}`;
+  diffEl.textContent = chart.difficulty;
+  diffEl.className = `difficulty ${chart.difficulty.toLowerCase()}`;
 }
+
+async function initApp() {
+  currentChart = await loadDemoChart();
+  updateStartScreenInfo(currentChart);
+}
+
+// ---- Game lifecycle ----
 
 async function startGame() {
   if (isTransitioning) return;
   isTransitioning = true;
 
   try {
-    // Create game instance (fresh each play to reset state)
-    if (game) {
-      game.audio.stop();
-    }
+    if (game) game.audio.stop();
 
+    // Create a fresh Game that uses the shared AudioEngine
     game = new Game({
       canvas:          el.canvas,
       scoreDisplay:    el.scoreDisplay,
@@ -178,18 +170,16 @@ async function startGame() {
       progressBar:     el.progressBar,
       laneOverlay:     el.laneOverlay,
       effectsLayer:    el.effectsLayer,
-    });
+    }, sharedAudio); // inject shared engine
 
     game.onResult = showResult;
     game.onPause  = () => showScreen('pause');
 
     game.loadChart(currentChart);
 
-    // Update game HUD
     el.hudSongName.textContent   = currentChart.title;
     el.hudDifficulty.textContent = currentChart.difficulty;
 
-    // Destroy previous input manager
     if (input) input.destroy();
     input = new InputManager(
       el.laneOverlay,
@@ -198,10 +188,7 @@ async function startGame() {
     );
 
     showScreen('game');
-
-    // Clear any leftover effects
     game.effects.clearAll();
-
     await game.start();
   } finally {
     isTransitioning = false;
@@ -223,19 +210,12 @@ function resumeGame() {
 
 async function retryGame() {
   if (isTransitioning) return;
-  showScreen('game');
   await startGame();
 }
 
 function quitToMenu() {
-  if (game) {
-    game.audio.stop();
-    game = null;
-  }
-  if (input) {
-    input.destroy();
-    input = null;
-  }
+  if (game) { game.audio.stop(); game = null; }
+  if (input) { input.destroy(); input = null; }
   showScreen('start');
 }
 
@@ -243,33 +223,136 @@ function quitToMenu() {
 
 function showResult({ score, maxCombo, counts, grade, title }) {
   el.resultSongName.textContent = title;
-  el.resultScore.textContent   = String(score).padStart(6, '0');
-  el.resultCombo.textContent   = maxCombo;
-  el.resultPerfect.textContent = counts.perfect;
-  el.resultGood.textContent    = counts.good;
-  el.resultMiss.textContent    = counts.miss;
+  el.resultScore.textContent    = String(score).padStart(6, '0');
+  el.resultCombo.textContent    = maxCombo;
+  el.resultPerfect.textContent  = counts.perfect;
+  el.resultGood.textContent     = counts.good;
+  el.resultMiss.textContent     = counts.miss;
 
-  const gradeEl = el.resultGrade;
-  gradeEl.textContent  = grade;
-  gradeEl.className    = `result-grade ${grade}`;
-
-  el.resultTitle.textContent = grade === 'S' ? 'FULL COMBO!' : grade === 'F' ? 'GAME OVER' : 'RESULT';
+  el.resultGrade.textContent    = grade;
+  el.resultGrade.className      = `result-grade ${grade}`;
+  el.resultTitle.textContent    =
+    grade === 'S' ? 'FULL COMBO!' : grade === 'F' ? 'GAME OVER' : 'RESULT';
 
   showScreen('result');
 }
 
-// ---- File upload (future extension point) ----
-// When implemented, this section will:
-//  1. Read the selected audio file into an ArrayBuffer
-//  2. Call game.audio.loadAudioBuffer(arrayBuffer)
-//  3. Run audio analysis (chart.generateAudioChart) or BPM chart
-//  4. Replace currentChart and call startGame()
-//
-// The UI button is already in index.html (disabled for now).
+// ---- File upload ----
 
-el.btnUpload.addEventListener('click', () => {
-  // TODO: open file picker and load audio
-  alert('音楽ファイル対応は近日公開予定です！');
+/** Show the drop zone, hide the settings panel. */
+function showDropZone() {
+  el.dropZone.hidden      = false;
+  el.uploadSettings.hidden = true;
+}
+
+/** Show the settings panel with the selected file info. */
+function showUploadSettings(file) {
+  const rawName = file.name.replace(/\.[^/.]+$/, ''); // strip extension
+  el.uploadFilename.textContent = file.name;
+  el.inputTitle.value           = rawName;
+  el.dropZone.hidden            = true;
+  el.uploadSettings.hidden      = false;
+}
+
+/** Open native file picker. */
+el.btnUpload.addEventListener('click', () => el.fileInput.click());
+
+/** File picked via dialog. */
+el.fileInput.addEventListener('change', () => {
+  const file = el.fileInput.files[0];
+  if (file) showUploadSettings(file);
+});
+
+/** Cancel upload → back to drop zone. */
+el.btnCancelUpload.addEventListener('click', () => {
+  el.fileInput.value = '';
+  sharedAudio.clearUploadedAudio();
+  showDropZone();
+});
+
+// ---- Drag & Drop ----
+el.dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  el.dropZone.classList.add('drag-over');
+});
+el.dropZone.addEventListener('dragleave', () => {
+  el.dropZone.classList.remove('drag-over');
+});
+el.dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  el.dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('audio/')) {
+    // Sync the file to the hidden input so we can read it later
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    el.fileInput.files = dt.files;
+    showUploadSettings(file);
+  } else if (file) {
+    alert('対応しているファイル形式は MP3 / WAV / OGG / AAC です。');
+  }
+});
+
+// ---- BPM slider ↔ number input sync ----
+el.inputBpmRange.addEventListener('input', () => {
+  el.inputBpm.value = el.inputBpmRange.value;
+});
+el.inputBpm.addEventListener('input', () => {
+  const v = Math.max(60, Math.min(240, parseInt(el.inputBpm.value) || 120));
+  el.inputBpmRange.value = v;
+});
+
+// ---- Play uploaded file ----
+el.btnPlayUpload.addEventListener('click', async () => {
+  const file = el.fileInput.files[0];
+  if (!file) return;
+
+  const title      = el.inputTitle.value.trim() || file.name.replace(/\.[^/.]+$/, '');
+  const bpm        = Math.max(60, Math.min(240, parseInt(el.inputBpm.value) || 120));
+  const difficulty = el.inputDifficulty.value;
+
+  // Show loading state
+  el.btnPlayUpload.disabled = true;
+  el.btnPlayUpload.classList.add('btn-loading');
+  el.btnPlayUpload.textContent = '読み込み中';
+
+  try {
+    // Init AudioContext in this user-gesture handler (required by browsers)
+    sharedAudio.init();
+    await sharedAudio.resume();
+
+    // Decode the audio file
+    const arrayBuffer = await file.arrayBuffer();
+    await sharedAudio.loadAudioBuffer(arrayBuffer);
+
+    const durationMs = sharedAudio._songBuffer.duration * 1000;
+
+    // Generate BPM chart for this duration
+    const rawChart = generateBPMChart({ title, bpm, durationMs, difficulty });
+    currentChart = normalizeChart(rawChart);
+
+    // Update start screen info
+    updateStartScreenInfo(currentChart);
+
+    // Reset upload UI
+    showDropZone();
+    el.fileInput.value = '';
+
+    // Launch the game immediately
+    await startGame();
+
+  } catch (err) {
+    console.error('[upload] Failed:', err);
+    alert(
+      '音楽ファイルの読み込みに失敗しました。\n' +
+      '対応形式: MP3 / WAV / OGG / AAC\n\n' +
+      `詳細: ${err.message}`
+    );
+  } finally {
+    el.btnPlayUpload.disabled = false;
+    el.btnPlayUpload.classList.remove('btn-loading');
+    el.btnPlayUpload.textContent = 'この曲でプレイ';
+  }
 });
 
 // ---- Button wiring ----
@@ -283,14 +366,14 @@ el.btnPauseQuit.addEventListener('click', quitToMenu);
 el.btnResultRetry.addEventListener('click', retryGame);
 el.btnResultQuit.addEventListener('click', quitToMenu);
 
-// Keyboard shortcut: Escape → pause/resume
+// Escape key → pause / resume
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    if (screens.game.classList.contains('active') && screens.pause.classList.contains('active')) {
-      resumeGame();
-    } else if (screens.game.classList.contains('active')) {
-      pauseGame();
-    }
+  if (e.key !== 'Escape') return;
+  if (screens.game.classList.contains('active') &&
+      screens.pause.classList.contains('active')) {
+    resumeGame();
+  } else if (screens.game.classList.contains('active')) {
+    pauseGame();
   }
 });
 
@@ -298,5 +381,4 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ---- Bootstrap ----
-
-initGame();
+initApp();
