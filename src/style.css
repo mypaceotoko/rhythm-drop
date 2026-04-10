@@ -306,6 +306,7 @@ kbd {
   padding: 12px 32px;
   border-radius: var(--radius);
   font-size: 1rem;
+  touch-action: manipulation; /* ダブルタップズームを防止 */
   font-weight: 700;
   letter-spacing: 0.08em;
   cursor: pointer;
