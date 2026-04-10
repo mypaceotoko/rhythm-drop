@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Rhythm Drop</title>
+  <link rel="stylesheet" href="src/style.css" />
+</head>
+<body>
+  <!-- ========== START SCREEN ========== -->
+  <div id="screen-start" class="screen active">
+    <div class="start-content">
+      <h1 class="game-title">RHYTHM<br><span>DROP</span></h1>
+      <p class="subtitle">5レーン リズムゲーム</p>
+
+      <div class="song-card">
+        <div class="song-info">
+          <div class="song-name" id="start-song-name">Demo Beat</div>
+          <div class="song-meta">
+            <span id="start-bpm">BPM 140</span>
+            <span class="difficulty easy" id="start-difficulty">EASY</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="key-guide">
+        <p>キーボード: <kbd>S</kbd><kbd>D</kbd><kbd>F</kbd><kbd>J</kbd><kbd>K</kbd></p>
+        <p>スマホ: レーンをタップ</p>
+      </div>
+
+      <button class="btn btn-primary" id="btn-start">PLAY</button>
+
+      <!-- Future: Upload music file -->
+      <div class="upload-section" id="upload-section">
+        <p class="upload-label">音楽ファイルをアップロード（近日対応）</p>
+        <button class="btn btn-secondary" id="btn-upload" disabled>音楽を選ぶ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== GAME SCREEN ========== -->
+  <div id="screen-game" class="screen">
+    <!-- Top HUD -->
+    <div id="hud">
+      <div class="hud-left">
+        <div class="hud-song-name" id="hud-song-name">Demo Beat</div>
+        <div class="hud-difficulty" id="hud-difficulty">EASY</div>
+      </div>
+      <div class="hud-center">
+        <div class="score-label">SCORE</div>
+        <div class="score-value" id="score-display">000000</div>
+      </div>
+      <div class="hud-right">
+        <button class="btn btn-icon" id="btn-pause" title="一時停止">⏸</button>
+      </div>
+    </div>
+
+    <!-- Progress bar -->
+    <div id="progress-bar-wrap">
+      <div id="progress-bar"></div>
+    </div>
+
+    <!-- Combo + Judgment -->
+    <div id="combo-area">
+      <div id="combo-display"><span id="combo-number">0</span><span class="combo-label">COMBO</span></div>
+      <div id="judgment-display"></div>
+    </div>
+
+    <!-- Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Lane touch targets (overlays on canvas) -->
+    <div id="lane-overlay">
+      <div class="lane-btn" data-lane="0"></div>
+      <div class="lane-btn" data-lane="1"></div>
+      <div class="lane-btn" data-lane="2"></div>
+      <div class="lane-btn" data-lane="3"></div>
+      <div class="lane-btn" data-lane="4"></div>
+    </div>
+
+    <!-- Hit effects layer -->
+    <div id="effects-layer"></div>
+
+    <!-- Bottom controls -->
+    <div id="bottom-controls">
+      <div id="gauge-wrap">
+        <div id="gauge-label">GAUGE</div>
+        <div id="gauge-bar"><div id="gauge-fill"></div></div>
+      </div>
+      <button class="btn btn-secondary btn-sm" id="btn-retry">RETRY</button>
+    </div>
+  </div>
+
+  <!-- ========== PAUSE SCREEN ========== -->
+  <div id="screen-pause" class="screen overlay">
+    <div class="overlay-box">
+      <h2>PAUSED</h2>
+      <button class="btn btn-primary" id="btn-resume">RESUME</button>
+      <button class="btn btn-secondary" id="btn-pause-retry">RETRY</button>
+      <button class="btn btn-ghost" id="btn-pause-quit">QUIT</button>
+    </div>
+  </div>
+
+  <!-- ========== RESULT SCREEN ========== -->
+  <div id="screen-result" class="screen overlay">
+    <div class="overlay-box result-box">
+      <h2 id="result-title">RESULT</h2>
+      <div class="result-grade" id="result-grade">S</div>
+      <div class="result-song" id="result-song-name">Demo Beat</div>
+      <div class="result-stats">
+        <div class="stat-row">
+          <span class="stat-label">SCORE</span>
+          <span class="stat-value" id="result-score">000000</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">MAX COMBO</span>
+          <span class="stat-value" id="result-combo">0</span>
+        </div>
+        <div class="stat-row perfect-row">
+          <span class="stat-label">PERFECT</span>
+          <span class="stat-value" id="result-perfect">0</span>
+        </div>
+        <div class="stat-row good-row">
+          <span class="stat-label">GOOD</span>
+          <span class="stat-value" id="result-good">0</span>
+        </div>
+        <div class="stat-row miss-row">
+          <span class="stat-label">MISS</span>
+          <span class="stat-value" id="result-miss">0</span>
+        </div>
+      </div>
+      <div class="result-buttons">
+        <button class="btn btn-primary" id="btn-result-retry">RETRY</button>
+        <button class="btn btn-ghost" id="btn-result-quit">MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts (module) -->
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
