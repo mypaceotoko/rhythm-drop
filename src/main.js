@@ -75,7 +75,7 @@ let isTransitioning = false;
 
 function getDemoBeatChart() {
   const bpm = 140;
-  const beat = (60 / bpm) * 1000; // ≈ 428ms
+  const beat = (60 / bpm) * 1000;
   const pattern = [
     [0,2],[1,2],[2,0],[2,4],[3,2],[3.5,1],[4,3],
     [4,2],[5,0],[5,4],[6,2],[7,1],[7,3],
@@ -128,13 +128,11 @@ function getNeonCityChart() {
 // =========================================================
 
 function initApp() {
-  // 内蔵曲をインラインデータから即時ロード（fetch なし）
   const builtinCharts = [
     normalizeChart(getDemoBeatChart()),
     normalizeChart(getNeonCityChart()),
   ];
 
-  // 曲タブを描画
   const container = document.getElementById('song-selector');
   container.innerHTML = '';
   builtinCharts.forEach((chart, idx) => {
@@ -149,7 +147,6 @@ function initApp() {
     container.appendChild(tab);
   });
 
-  // 最初の曲を選択
   selectSong(builtinCharts[0], 0, container);
 }
 
@@ -236,7 +233,6 @@ function resumeGame() {
 }
 async function retryGame() {
   if (isTransitioning) return;
-  // AudioContext はここで同期 init（再起動でも必要）
   sharedAudio.init();
   await startGame();
 }
@@ -307,7 +303,6 @@ el.btnCancelUpload.addEventListener('click', () => {
   showDropZone();
 });
 
-// Drag & Drop
 el.dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); el.dropZone.classList.add('drag-over'); });
 el.dropZone.addEventListener('dragleave', ()  => { el.dropZone.classList.remove('drag-over'); });
 el.dropZone.addEventListener('drop', (e) => {
@@ -322,18 +317,16 @@ el.dropZone.addEventListener('drop', (e) => {
   }
 });
 
-// BPM スライダー ↔ 数値入力 連動
 el.inputBpmRange.addEventListener('input', () => { el.inputBpm.value = el.inputBpmRange.value; });
 el.inputBpm.addEventListener('input', () => {
   el.inputBpmRange.value = Math.max(60, Math.min(240, parseInt(el.inputBpm.value) || 120));
 });
 
-// アップロード曲でプレイ
 el.btnPlayUpload.addEventListener('click', async () => {
   const file = el.fileInput.files[0];
   if (!file) return;
 
-  // ★ iOS Safari 対策: AudioContext を click の同期コードで必ず init
+  // iOS Safari 対策: AudioContext を click の同期コードで必ず init
   sharedAudio.init();
 
   const title      = el.inputTitle.value.trim() || file.name.replace(/\.[^/.]+$/, '');
@@ -369,7 +362,6 @@ el.btnPlayUpload.addEventListener('click', async () => {
 // ボタン配線
 // =========================================================
 
-// ★ PLAY ボタン: AudioContext を click の同期コードで init してから startGame
 el.btnStart.addEventListener('click', () => {
   sharedAudio.init(); // 必ず同期で呼ぶ（iOS Safari 対策）
   startGame();
@@ -383,7 +375,6 @@ el.btnPauseQuit.addEventListener('click',   quitToMenu);
 el.btnResultRetry.addEventListener('click', retryGame);
 el.btnResultQuit.addEventListener('click',  quitToMenu);
 
-// Escape キー
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (screens.game.classList.contains('active') && screens.pause.classList.contains('active')) {
@@ -393,10 +384,9 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// 長押しコンテキストメニューを防止
 window.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // =========================================================
 // 起動
 // =========================================================
-initApp(); // 同期実行 — fetch なし
+initApp();
