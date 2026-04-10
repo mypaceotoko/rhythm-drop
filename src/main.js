@@ -241,17 +241,17 @@ function showResult({ score, maxCombo, counts, grade, title }) {
 
 /** Show the drop zone, hide the settings panel. */
 function showDropZone() {
-  el.dropZone.hidden      = false;
-  el.uploadSettings.hidden = true;
+  el.dropZone.style.display      = '';   // CSS の display:flex に戻す
+  el.uploadSettings.style.display = 'none';
 }
 
 /** Show the settings panel with the selected file info. */
 function showUploadSettings(file) {
   const rawName = file.name.replace(/\.[^/.]+$/, ''); // strip extension
-  el.uploadFilename.textContent = file.name;
-  el.inputTitle.value           = rawName;
-  el.dropZone.hidden            = true;
-  el.uploadSettings.hidden      = false;
+  el.uploadFilename.textContent   = file.name;
+  el.inputTitle.value             = rawName;
+  el.dropZone.style.display       = 'none';
+  el.uploadSettings.style.display = 'flex';
 }
 
 /** File picked via dialog (label[for=file-input] handles opening natively). */
