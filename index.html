@@ -36,15 +36,17 @@
       <div class="upload-section" id="upload-section">
         <div class="upload-divider"><span>または自分の曲でプレイ</span></div>
 
-        <!-- Hidden file input -->
-        <input type="file" id="file-input" accept="audio/*" hidden />
+        <!-- Hidden file input: use label association for mobile compatibility -->
+        <input type="file" id="file-input" accept="audio/*"
+               style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" />
 
         <!-- Drop zone -->
         <div class="drop-zone" id="drop-zone">
           <div class="drop-icon">🎵</div>
           <p class="drop-main">音楽ファイルをドロップ</p>
           <p class="drop-sub">MP3 / WAV / OGG / AAC</p>
-          <button class="btn btn-secondary" id="btn-upload" type="button">ファイルを選ぶ</button>
+          <!-- label + for= が最もモバイル互換性の高いファイル選択方法 -->
+          <label class="btn btn-secondary" id="btn-upload" for="file-input">ファイルを選ぶ</label>
         </div>
 
         <!-- Settings panel (shown after file selection) -->

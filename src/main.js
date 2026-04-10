@@ -254,10 +254,7 @@ function showUploadSettings(file) {
   el.uploadSettings.hidden      = false;
 }
 
-/** Open native file picker. */
-el.btnUpload.addEventListener('click', () => el.fileInput.click());
-
-/** File picked via dialog. */
+/** File picked via dialog (label[for=file-input] handles opening natively). */
 el.fileInput.addEventListener('change', () => {
   const file = el.fileInput.files[0];
   if (file) showUploadSettings(file);
