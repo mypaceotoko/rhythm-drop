@@ -99,6 +99,15 @@ function showScreen(name) {
   }
 }
 
+// ---- Built-in song list ----
+
+const BUILTIN_SONGS = [
+  { file: './data/demo-chart.json',  label: 'Demo Beat',  bpm: 140, difficulty: 'EASY'   },
+  { file: './data/neon-city.json',   label: 'Neon City',  bpm: 128, difficulty: 'NORMAL' },
+];
+
+let builtinCharts = []; // loaded chart objects in order
+
 // ---- Chart loading ----
 
 async function loadDemoChart() {
@@ -146,7 +155,50 @@ function updateStartScreenInfo(chart) {
 }
 
 async function initApp() {
-  currentChart = await loadDemoChart();
+  // Load all built-in charts (best-effort; fallback on error)
+  builtinCharts = await Promise.all(
+    BUILTIN_SONGS.map(async (song) => {
+      try {
+        return normalizeChart(await loadChart(song.file));
+      } catch (_) {
+        return null;
+      }
+    })
+  );
+  // Filter out failed loads; guarantee at least the fallback demo
+  if (!builtinCharts[0]) builtinCharts[0] = normalizeChart(getFallbackChart());
+  builtinCharts = builtinCharts.filter(Boolean);
+
+  buildSongSelector();
+  selectBuiltinSong(0);
+}
+
+/** Render the horizontal song-tab strip. */
+function buildSongSelector() {
+  const container = document.getElementById('song-selector');
+  container.innerHTML = '';
+  builtinCharts.forEach((chart, idx) => {
+    const tab = document.createElement('button');
+    tab.className = 'song-tab';
+    tab.dataset.idx = idx;
+    tab.innerHTML = `
+      <span class="song-tab-title">${chart.title}</span>
+      <span class="song-tab-meta">BPM ${chart.bpm} · ${chart.difficulty}</span>
+    `;
+    tab.addEventListener('click', () => selectBuiltinSong(idx));
+    container.appendChild(tab);
+  });
+}
+
+/** Select a built-in chart by index and update the start screen. */
+function selectBuiltinSong(idx) {
+  builtinCharts.forEach((_, i) => {
+    const tab = document.querySelector(`.song-tab[data-idx="${i}"]`);
+    if (tab) tab.classList.toggle('active', i === idx);
+  });
+  currentChart = builtinCharts[idx];
+  // Clear any uploaded audio so we use the synth demo
+  sharedAudio.clearUploadedAudio();
   updateStartScreenInfo(currentChart);
 }
 

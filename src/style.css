@@ -60,14 +60,18 @@ html, body {
 /* ---------- Start Screen ---------- */
 #screen-start {
   background: radial-gradient(ellipse at center, #1a1040 0%, var(--bg) 70%);
+  /* コンテンツが画面より縦に長いときスクロールできるようにする */
+  overflow-y: auto;
+  justify-content: flex-start; /* center だと上が見切れるので上揃えに */
+  -webkit-overflow-scrolling: touch;
 }
 
 .start-content {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
-  padding: 32px 24px;
+  gap: 16px;
+  padding: 28px 20px 40px; /* 下に余白を足してスクロール末端を確保 */
   width: 100%;
   max-width: 420px;
 }
@@ -215,7 +219,7 @@ kbd {
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 1rem; /* 16px 未満だと iOS Safari がタップ時に自動ズームする */
   padding: 6px 10px;
   outline: none;
   transition: border-color var(--transition);
@@ -262,6 +266,37 @@ kbd {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ---------- Song Selector ---------- */
+.song-selector {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.song-selector::-webkit-scrollbar { display: none; }
+
+.song-tab {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+  min-width: 110px;
+  text-align: left;
+}
+.song-tab:hover        { border-color: var(--accent); }
+.song-tab.active       { border-color: var(--accent); background: rgba(124,58,237,0.15); }
+.song-tab-title        { font-size: 0.8rem; font-weight: 700; color: var(--text); }
+.song-tab-meta         { font-size: 0.65rem; color: var(--text-dim); }
 
 /* ---------- Buttons ---------- */
 .btn {
