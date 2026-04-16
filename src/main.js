@@ -2,9 +2,10 @@
  * main.js – Application entry point
  *
  * iOS Safari 対応の重要ポイント:
- *  1. AudioContext は必ずボタン click の同期コード内で init() する
- *  2. 内蔵曲データはインライン定義 → fetch 不要・ネットワーク遅延ゼロ
- *  3. touch-action: manipulation で誤ダブルタップズームを防止
+ *  1. AudioContext は必ずボタン click / touchstart の同期コード内で init() する
+ *  2. touch-action: none を body に設定しない（click が発火しなくなる）
+ *  3. 内蔵曲データはインライン定義 → fetch 不要・ネットワーク遅延ゼロ
+ *  4. decodeAudioData は callback 形式を使用（古い iOS Safari は Promise 非対応）
  */
 
 import { Game } from './game.js';
@@ -35,11 +36,11 @@ const el = {
   hudSongName:     document.getElementById('hud-song-name'),
   hudDifficulty:   document.getElementById('hud-difficulty'),
   btnStart:        document.getElementById('btn-start'),
-  btnUpload:       document.getElementById('btn-upload'),
   fileInput:       document.getElementById('file-input'),
   dropZone:        document.getElementById('drop-zone'),
   uploadSettings:  document.getElementById('upload-settings'),
   uploadFilename:  document.getElementById('upload-filename'),
+  uploadStatus:    document.getElementById('upload-status'),
   inputTitle:      document.getElementById('input-title'),
   inputBpm:        document.getElementById('input-bpm'),
   inputBpmRange:   document.getElementById('input-bpm-range'),
@@ -92,8 +93,10 @@ function getDemoBeatChart() {
   const notes = pattern.map(([b, lane]) => ({
     time: Math.round(b * beat + beat * 2), lane,
   }));
-  return { id:'demo_beat', title:'Demo Beat', artist:'Rhythm Drop',
-           bpm, difficulty:'EASY', totalNotes:notes.length, audioFile:null, notes };
+  return {
+    id: 'demo_beat', title: 'Demo Beat', artist: 'Rhythm Drop',
+    bpm, difficulty: 'EASY', totalNotes: notes.length, audioFile: null, notes,
+  };
 }
 
 function getNeonCityChart() {
@@ -119,22 +122,22 @@ function getNeonCityChart() {
     {time:15469,lane:3},{time:15703,lane:0},{time:15703,lane:4},{time:15938,lane:2},
     {time:16172,lane:1},{time:16406,lane:3},{time:16641,lane:2},
   ];
-  return { id:'neon_city', title:'Neon City', artist:'Rhythm Drop',
-           bpm:128, difficulty:'NORMAL', totalNotes:notes.length, audioFile:null, notes };
+  return {
+    id: 'neon_city', title: 'Neon City', artist: 'Rhythm Drop',
+    bpm: 128, difficulty: 'NORMAL', totalNotes: notes.length, audioFile: null, notes,
+  };
 }
 
 // =========================================================
-// 起動処理（同期・即時）
+// 起動処理（同期・即時実行）
 // =========================================================
 
 function initApp() {
-  // 内蔵曲をインラインデータから即時ロード（fetch なし）
   const builtinCharts = [
     normalizeChart(getDemoBeatChart()),
     normalizeChart(getNeonCityChart()),
   ];
 
-  // 曲タブを描画
   const container = document.getElementById('song-selector');
   container.innerHTML = '';
   builtinCharts.forEach((chart, idx) => {
@@ -145,11 +148,15 @@ function initApp() {
       <span class="song-tab-title">${chart.title}</span>
       <span class="song-tab-meta">BPM ${chart.bpm} · ${chart.difficulty}</span>
     `;
+    // touchstart: iOS で click より先に発火（0ms レイテンシ）
+    tab.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      selectSong(chart, idx, container);
+    }, { passive: false });
     tab.addEventListener('click', () => selectSong(chart, idx, container));
     container.appendChild(tab);
   });
 
-  // 最初の曲を選択
   selectSong(builtinCharts[0], 0, container);
 }
 
@@ -177,9 +184,10 @@ function updateStartScreenInfo(chart) {
 
 async function startGame() {
   if (isTransitioning) return;
+  // currentChart が null の場合はデモ曲にフォールバック
   if (!currentChart) {
-    alert('曲データが読み込まれていません。ページを再読み込みしてください。');
-    return;
+    console.warn('[startGame] currentChart is null, falling back to demo');
+    currentChart = normalizeChart(getDemoBeatChart());
   }
   isTransitioning = true;
   try {
@@ -223,7 +231,7 @@ async function startGame() {
   }
 }
 
-function pauseGame()  {
+function pauseGame() {
   if (!game) return;
   game.pause();
   if (input) input.reset();
@@ -236,7 +244,6 @@ function resumeGame() {
 }
 async function retryGame() {
   if (isTransitioning) return;
-  // AudioContext はここで同期 init（再起動でも必要）
   sharedAudio.init();
   await startGame();
 }
@@ -286,15 +293,25 @@ function showResult({ score, maxCombo, counts, grade, title }) {
 // ファイルアップロード
 // =========================================================
 
+/** アップロードステータス表示の更新 */
+function setUploadStatus(type, message) {
+  if (!el.uploadStatus) return;
+  el.uploadStatus.textContent = message;
+  el.uploadStatus.className = type ? `upload-status ${type}` : 'upload-status';
+  el.uploadStatus.style.display = message ? '' : 'none';
+}
+
 function showDropZone() {
   el.dropZone.style.display       = '';
   el.uploadSettings.style.display = 'none';
+  setUploadStatus('', '');
 }
 function showUploadSettings(file) {
   el.uploadFilename.textContent   = file.name;
   el.inputTitle.value             = file.name.replace(/\.[^/.]+$/, '');
   el.dropZone.style.display       = 'none';
   el.uploadSettings.style.display = 'flex';
+  setUploadStatus('', '');
 }
 
 el.fileInput.addEventListener('change', () => {
@@ -307,7 +324,7 @@ el.btnCancelUpload.addEventListener('click', () => {
   showDropZone();
 });
 
-// Drag & Drop
+// Drag & Drop（デスクトップ向け）
 el.dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); el.dropZone.classList.add('drag-over'); });
 el.dropZone.addEventListener('dragleave', ()  => { el.dropZone.classList.remove('drag-over'); });
 el.dropZone.addEventListener('drop', (e) => {
@@ -315,9 +332,11 @@ el.dropZone.addEventListener('drop', (e) => {
   el.dropZone.classList.remove('drag-over');
   const file = e.dataTransfer.files[0];
   if (file && file.type.startsWith('audio/')) {
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    el.fileInput.files = dt.files;
+    try {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      el.fileInput.files = dt.files;
+    } catch (_) {}
     showUploadSettings(file);
   }
 });
@@ -333,7 +352,7 @@ el.btnPlayUpload.addEventListener('click', async () => {
   const file = el.fileInput.files[0];
   if (!file) return;
 
-  // ★ iOS Safari 対策: AudioContext を click の同期コードで必ず init
+  // ★ iOS Safari 必須: AudioContext を click の同期コード内で init
   sharedAudio.init();
 
   const title      = el.inputTitle.value.trim() || file.name.replace(/\.[^/.]+$/, '');
@@ -343,21 +362,53 @@ el.btnPlayUpload.addEventListener('click', async () => {
   el.btnPlayUpload.disabled = true;
   el.btnPlayUpload.classList.add('btn-loading');
   el.btnPlayUpload.textContent = '読み込み中';
+  setUploadStatus('loading', '音楽ファイルを読み込んでいます...');
 
   try {
+    // AudioContext を resume（iOS ではユーザー操作後に resume が必要）
     await sharedAudio.resume();
+
+    // ファイルを ArrayBuffer として読み込む
     const arrayBuffer = await file.arrayBuffer();
+
+    // Web Audio API でデコード（callback 形式 → iOS Safari 互換）
     await sharedAudio.loadAudioBuffer(arrayBuffer);
 
-    const durationMs = sharedAudio._songBuffer.duration * 1000;
-    currentChart = normalizeChart(generateBPMChart({ title, bpm, durationMs, difficulty }));
+    // 音声の長さを公開 getter で取得（private field への直接アクセス不要）
+    const durationMs = sharedAudio.songDurationMs;
+    if (!durationMs || durationMs < 500) {
+      throw new Error('音声ファイルの長さを取得できませんでした（破損または未対応形式）');
+    }
+
+    // BPM ベースで譜面を自動生成
+    const rawChart = generateBPMChart({ title, bpm, durationMs, difficulty });
+    currentChart = normalizeChart(rawChart);
     updateStartScreenInfo(currentChart);
+
+    setUploadStatus('success',
+      `読み込み完了 ✓\n${Math.round(durationMs / 1000)}秒 / ${currentChart.totalNotes}ノーツ生成`);
+
+    // 成功表示を見せてからゲーム開始
+    await new Promise(r => setTimeout(r, 700));
     showDropZone();
     el.fileInput.value = '';
     await startGame();
+
   } catch (err) {
-    console.error('[upload]', err);
-    alert(`音楽ファイルの読み込みに失敗しました。\n対応形式: MP3 / WAV / OGG / AAC\n\n${err.message}`);
+    console.error('[upload] error:', err);
+
+    // エラー内容をインライン表示（アプリはクラッシュしない）
+    const userMsg = err.message || '不明なエラー';
+    setUploadStatus('error',
+      `読み込み失敗: ${userMsg}\n対応形式: MP3 / WAV / OGG / AAC`);
+
+    // アップロード状態をリセット、デモ曲で続行可能にする
+    sharedAudio.clearUploadedAudio();
+    if (!currentChart) {
+      currentChart = normalizeChart(getDemoBeatChart());
+      updateStartScreenInfo(currentChart);
+    }
+
   } finally {
     el.btnPlayUpload.disabled = false;
     el.btnPlayUpload.classList.remove('btn-loading');
@@ -369,9 +420,15 @@ el.btnPlayUpload.addEventListener('click', async () => {
 // ボタン配線
 // =========================================================
 
-// ★ PLAY ボタン: AudioContext を click の同期コードで init してから startGame
+// PLAY ボタン
+// touchstart を先に登録: iOS で 0ms レイテンシ、確実に反応
+el.btnStart.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  sharedAudio.init(); // 必ず同期で呼ぶ（iOS Safari の AudioContext unlock）
+  startGame();
+}, { passive: false });
 el.btnStart.addEventListener('click', () => {
-  sharedAudio.init(); // 必ず同期で呼ぶ（iOS Safari 対策）
+  sharedAudio.init();
   startGame();
 });
 
@@ -399,4 +456,4 @@ window.addEventListener('contextmenu', (e) => e.preventDefault());
 // =========================================================
 // 起動
 // =========================================================
-initApp(); // 同期実行 — fetch なし
+initApp(); // 同期実行 — fetch なし・即時完了
