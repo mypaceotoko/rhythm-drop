@@ -151,6 +151,11 @@ export class AudioEngine {
     return this._songBuffer ? Math.floor(this._songBuffer.duration * 1000) : 0;
   }
 
+  /** The decoded AudioBuffer (for analysis). Null if nothing loaded. */
+  get audioBuffer() {
+    return this._songBuffer;
+  }
+
   /** Clear the uploaded audio buffer (call when user discards the upload). */
   clearUploadedAudio() {
     this._songBuffer = null;

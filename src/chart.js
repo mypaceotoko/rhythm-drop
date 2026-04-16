@@ -157,19 +157,91 @@ const HARD_PATTERNS = [
   [3, 1, 4, 0, 2, 4, 1, 3],   // random-feeling but predictable
 ];
 
+// ── Analysis-based chart generation ──────────────────────────────────────────
+
 /**
- * Stub for future audio-analysis-based chart generation.
- * When implemented, this should:
- *  1. Run onset detection on the audio buffer
- *  2. Map detected onsets to lanes (e.g., frequency band → lane)
- *  3. Return a chart object
+ * Build a chart from the output of analyzeAudio().
+ * Pure function – separated so the algorithm can be improved independently.
  *
- * @param {AudioBuffer} audioBuffer
+ * @param {{ bpm: number, onsets: Array, durationMs: number }} analysis
  * @param {object} opts
- * @returns {object} chart (stub: falls back to BPM generation)
+ * @param {string} [opts.title]
+ * @param {string} [opts.difficulty] – 'EASY'|'NORMAL'|'HARD'
+ * @returns {object} chart (call normalizeChart() afterwards)
+ */
+export function buildChartFromAnalysis(analysis, opts = {}) {
+  const { title = 'Analyzed Chart', difficulty = 'NORMAL' } = opts;
+  const { onsets, bpm, durationMs } = analysis;
+
+  // Difficulty → density parameters
+  const CFG = {
+    EASY:   { minGap: 220, energyMin: 0.45, dualRate: 0.00 },
+    NORMAL: { minGap: 120, energyMin: 0.28, dualRate: 0.06 },
+    HARD:   { minGap:  80, energyMin: 0.15, dualRate: 0.16 },
+  };
+  const cfg = CFG[difficulty] || CFG.NORMAL;
+
+  // Frequency band → preferred lane order
+  // low  (kick/bass)    → outer lanes first
+  // mid  (snare/melody) → centre then inner
+  // high (hi-hat)       → inner then centre
+  const BAND_LANES = {
+    low:  [0, 4, 2, 1, 3],
+    mid:  [2, 1, 3, 0, 4],
+    high: [1, 3, 2, 0, 4],
+  };
+
+  // Rotation index per band to cycle lane assignments
+  const rot    = { low: 0, mid: 0, high: 0 };
+  const notes  = [];
+  let lastTime = -Infinity;
+  let lastLane = -1;
+
+  for (const onset of onsets) {
+    if (onset.energy < cfg.energyMin)       continue;
+    if (onset.time - lastTime < cfg.minGap) continue;
+
+    const prefs = BAND_LANES[onset.band] ?? BAND_LANES.mid;
+    const idx   = rot[onset.band] ?? 0;
+    let lane    = prefs[idx % prefs.length];
+
+    // Avoid immediate same-lane repeat
+    if (lane === lastLane && prefs.length > 1) lane = prefs[(idx + 1) % prefs.length];
+
+    rot[onset.band] = (rot[onset.band] ?? 0) + 1;
+    notes.push({ time: onset.time, lane });
+    lastTime = onset.time;
+    lastLane = lane;
+
+    // Dual note for very strong beats (NORMAL / HARD only)
+    if (difficulty !== 'EASY' && onset.energy > 0.70 && Math.random() < cfg.dualRate) {
+      const DUAL    = [4, 3, 4, 1, 0]; // symmetric partners
+      const partner = DUAL[lane];
+      if (partner !== lane) notes.push({ time: onset.time, lane: partner });
+    }
+  }
+
+  notes.sort((a, b) => a.time - b.time || a.lane - b.lane);
+
+  return {
+    id:             `analyzed_${Date.now()}`,
+    title,
+    artist:         'Auto Generated',
+    bpm,
+    difficulty,
+    totalNotes:     notes.length,
+    audioFile:      'uploaded',
+    audioDurationMs: durationMs,
+    notes,
+  };
+}
+
+/**
+ * Legacy stub – kept so old imports don't break.
+ * @deprecated  Use analyzeAudio() + buildChartFromAnalysis() instead.
  */
 export function generateAudioChart(audioBuffer, opts = {}) {
-  console.warn('[chart] Audio analysis not yet implemented. Using BPM fallback.');
+  console.warn('[chart] generateAudioChart is deprecated. Use buildChartFromAnalysis.');
   const durationMs = audioBuffer.duration * 1000;
   return generateBPMChart({ ...opts, durationMs });
 }
