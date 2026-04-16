@@ -14,9 +14,11 @@ import { AudioEngine }                                from './audio.js';
 import { normalizeChart, generateBPMChart,
          buildChartFromAnalysis }                     from './chart.js';
 import { analyzeAudio }                               from './analyzer.js';
+import { SongStorage }                               from './storage.js';
 
-// ---- Shared audio engine ----
+// ---- Shared audio engine / storage ----
 const sharedAudio = new AudioEngine();
+const storage     = new SongStorage();
 
 // ---- DOM references ----
 const screens = {
@@ -57,6 +59,10 @@ const el = {
   analysisResultInfo:  document.getElementById('analysis-result-info'),
   btnPlayAnalyzed:     document.getElementById('btn-play-analyzed'),
   btnSaveSong:         document.getElementById('btn-save-song'),
+  // Saved songs section
+  savedSection:        document.getElementById('saved-section'),
+  savedList:           document.getElementById('saved-list'),
+  savedCount:          document.getElementById('saved-count'),
   // Game controls
   btnPause:            document.getElementById('btn-pause'),
   btnRetry:            document.getElementById('btn-retry'),
@@ -170,6 +176,9 @@ function initApp() {
   });
 
   selectSong(builtinCharts[0], 0, container);
+
+  // 保存済み曲を非同期で読み込む（失敗してもゲームは動く）
+  loadSavedSongs().catch(err => console.warn('[initApp] loadSavedSongs:', err));
 }
 
 function selectSong(chart, idx, container) {
@@ -331,6 +340,143 @@ function setAnalysisProgress(ratio, statusText) {
 }
 
 // =========================================================
+// IndexedDB 保存済み曲（Step 2）
+// =========================================================
+
+/** HTML エスケープ（innerHTML インジェクション防止） */
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** IndexedDB から保存済み曲一覧を読み込み、画面に描画する */
+async function loadSavedSongs() {
+  try {
+    await storage.init();
+    const songs = await storage.list();
+    renderSavedSongs(songs);
+  } catch (err) {
+    console.warn('[loadSavedSongs]', err.message);
+    // IndexedDB が使えないブラウザ等 → 非表示のままにする
+  }
+}
+
+/**
+ * 保存済み曲一覧を #saved-list に描画する。
+ * 0件のときはセクション全体を非表示。
+ */
+function renderSavedSongs(songs) {
+  if (!songs || songs.length === 0) {
+    el.savedSection.style.display = 'none';
+    return;
+  }
+
+  el.savedSection.style.display = '';
+  el.savedCount.textContent = `${songs.length}曲`;
+  el.savedList.innerHTML = '';
+
+  for (const song of songs) {
+    const durMin = String(Math.floor((song.durationMs || 0) / 60000)).padStart(2, '0');
+    const durSec = String(Math.floor(((song.durationMs || 0) % 60000) / 1000)).padStart(2, '0');
+    const sizeMB = ((song.fileSizeBytes || 0) / 1024 / 1024).toFixed(1);
+    const date   = new Date(song.savedAt || 0).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
+    const diff   = (song.difficulty || 'NORMAL').toLowerCase();
+
+    const item = document.createElement('div');
+    item.className = 'saved-item';
+    item.dataset.id = song.id;
+    item.innerHTML = `
+      <div class="saved-item-info">
+        <div class="saved-item-name">${escapeHtml(song.title)}</div>
+        <div class="saved-item-meta">
+          BPM ${song.bpm} &middot;
+          <span class="difficulty ${diff}" style="padding:1px 6px;font-size:0.6rem">${escapeHtml(song.difficulty)}</span>
+          &middot; ${durMin}:${durSec} &middot; ${sizeMB}MB &middot; ${date}
+        </div>
+      </div>
+      <div class="saved-item-actions">
+        <button class="btn btn-xs btn-primary saved-play-btn"
+                data-id="${song.id}"
+                style="touch-action:manipulation">▶</button>
+        <button class="btn btn-xs btn-ghost saved-delete-btn"
+                data-id="${song.id}"
+                data-title="${escapeHtml(song.title)}"
+                style="touch-action:manipulation">✕</button>
+      </div>
+    `;
+    el.savedList.appendChild(item);
+  }
+
+  // PLAY ボタン: touchstart で即レスポンス（iOS 0ms レイテンシ）
+  el.savedList.querySelectorAll('.saved-play-btn').forEach(btn => {
+    const id = Number(btn.dataset.id);
+    btn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      sharedAudio.init(); // AudioContext は同期コード内で unlock（iOS 必須）
+      playSavedSong(id, btn);
+    }, { passive: false });
+    btn.addEventListener('click', () => {
+      sharedAudio.init();
+      playSavedSong(id, btn);
+    });
+  });
+
+  // DELETE ボタン
+  el.savedList.querySelectorAll('.saved-delete-btn').forEach(btn => {
+    const id    = Number(btn.dataset.id);
+    const title = btn.dataset.title;
+    btn.addEventListener('click', () => deleteSavedSong(id, title));
+  });
+}
+
+/**
+ * 保存済み曲を再生する。
+ * IndexedDB から Blob を取得 → デコード → ゲーム開始。
+ * 失敗してもクラッシュしない。
+ */
+async function playSavedSong(id, triggerBtn = null) {
+  if (isTransitioning) return;
+  if (triggerBtn) { triggerBtn.disabled = true; triggerBtn.textContent = '…'; }
+
+  try {
+    const record = await storage.load(id);
+    if (!record || !record.blob) throw new Error('データが見つかりません');
+
+    await sharedAudio.resume();
+    const arrayBuffer = await record.blob.arrayBuffer();
+    await sharedAudio.loadAudioBuffer(arrayBuffer);
+
+    // 保存済みチャートをそのまま使う（再解析不要）
+    currentChart = normalizeChart(record.chart);
+    updateStartScreenInfo(currentChart);
+    await startGame();
+
+  } catch (err) {
+    console.error('[playSavedSong]', err);
+    sharedAudio.clearUploadedAudio();
+    if (!currentChart) currentChart = normalizeChart(getDemoBeatChart());
+    alert(`曲の読み込みに失敗しました。\n${err.message}`);
+  } finally {
+    if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.textContent = '▶'; }
+  }
+}
+
+/**
+ * 保存済み曲を削除して一覧を再描画する。
+ */
+async function deleteSavedSong(id, title) {
+  if (!confirm(`「${title}」を削除しますか？`)) return;
+  try {
+    await storage.delete(id);
+    await loadSavedSongs(); // 一覧を再描画
+  } catch (err) {
+    console.error('[deleteSavedSong]', err);
+    alert(`削除に失敗しました。\n${err.message}`);
+  }
+}
+
+// =========================================================
 // 音声解析フロー（Step 1 メイン実装）
 // =========================================================
 
@@ -474,9 +620,55 @@ el.btnPlayAnalyzed.addEventListener('click', () => {
   startGame();
 });
 
-// 解析後: 保存ボタン（Step 2 で実装）
-el.btnSaveSong.addEventListener('click', () => {
-  setUploadStatus('loading', '保存機能は Step 2 で実装予定です');
+// 解析後: 保存ボタン
+el.btnSaveSong.addEventListener('click', async () => {
+  if (!currentChart || !_pendingFile) {
+    setUploadStatus('error', '保存する曲がありません。先に解析してください。');
+    return;
+  }
+
+  const btn = el.btnSaveSong;
+  btn.disabled    = true;
+  btn.textContent = '保存中...';
+  setUploadStatus('loading', '保存中...');
+
+  try {
+    await storage.init();
+
+    // 容量見積もりをチェックして大きすぎる場合は早期エラー
+    const usage = await storage.estimateUsage();
+    if (usage) console.log(`[storage] ${usage.usageMB} MB / ${usage.quotaMB} MB used`);
+
+    await storage.save(
+      _pendingFile,
+      {
+        title:       currentChart.title,
+        bpm:         currentChart.bpm,
+        difficulty:  currentChart.difficulty,
+        durationMs:  currentChart.audioDurationMs || sharedAudio.songDurationMs,
+        totalNotes:  currentChart.totalNotes,
+      },
+      currentChart
+    );
+
+    setUploadStatus('success', `保存しました ✓\n「${currentChart.title}」を一覧に追加`);
+
+    // 保存済み曲一覧を更新
+    await loadSavedSongs();
+
+    // 少し待ってからパネルを閉じる
+    await new Promise(r => setTimeout(r, 1600));
+    showDropZone();
+    el.fileInput.value = '';
+    _pendingFile = null;
+
+  } catch (err) {
+    console.error('[save]', err);
+    setUploadStatus('error', `保存失敗: ${err.message}`);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = '💾 保存';
+  }
 });
 
 // PLAY ボタン（内蔵曲 or 既に解析済みの曲）
