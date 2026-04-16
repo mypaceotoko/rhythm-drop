@@ -127,8 +127,6 @@ export function generateBPMChart({
 
 // ---- Lane pattern tables ----
 
-const LANE_COUNT = 5;
-
 // Symmetric partner for dual-note hits
 const DUAL_PARTNER = [4, 3, 0, 1, 0]; // lane → paired lane
 
