@@ -7,8 +7,9 @@
  *   record   : {
  *     id, title, bpm, difficulty, durationMs, totalNotes,
  *     savedAt, fileSizeBytes,
- *     blob  : Blob   (audio file),
- *     chart : object (normalized chart with notes array)
+ *     audioData : ArrayBuffer  (audio bytes – Blob cannot be stored on iOS Safari),
+ *     audioType : string       (MIME type, e.g. 'audio/mpeg'),
+ *     chart     : object       (normalized chart with notes array)
  *   }
  *
  * All public methods are async and throw on unrecoverable error.
@@ -54,9 +55,14 @@ export class SongStorage {
       );
     }
 
+    // iOS Safari cannot store Blob/File objects in IndexedDB.
+    // Convert to ArrayBuffer first; reconstruct Blob on load().
+    const audioData = await blobToArrayBuffer(blob);
+
     const record = {
       ...meta,
-      blob,
+      audioData,
+      audioType:     blob.type || 'audio/mpeg',
       chart:         JSON.parse(JSON.stringify(chart)), // deep clone
       savedAt:       Date.now(),
       fileSizeBytes: blob.size,
@@ -69,7 +75,7 @@ export class SongStorage {
   }
 
   /**
-   * Return metadata for all saved songs (blob and chart are excluded to save memory).
+   * Return metadata for all saved songs (audio data and chart are excluded to save memory).
    * @returns {Promise<object[]>}
    */
   async list() {
@@ -78,12 +84,13 @@ export class SongStorage {
       this._db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll(),
       '一覧の取得に失敗しました'
     );
-    // Strip blob/chart – callers use load() for those
-    return (all || []).map(({ blob: _b, chart: _c, ...meta }) => meta);
+    // Strip heavy fields – callers use load() for those
+    return (all || []).map(({ audioData: _a, audioType: _t, blob: _b, chart: _c, ...meta }) => meta);
   }
 
   /**
-   * Load a full song record (including blob and chart).
+   * Load a full song record.
+   * Returns record with a reconstructed `blob` property for backward compatibility.
    * @param {number} id
    * @returns {Promise<object>}
    */
@@ -94,6 +101,11 @@ export class SongStorage {
       '読み込みに失敗しました'
     );
     if (!rec) throw new Error(`ID ${id} の曲が見つかりません`);
+
+    // Reconstruct Blob from stored ArrayBuffer (backward compat: old records had blob directly)
+    if (rec.audioData && !rec.blob) {
+      rec.blob = new Blob([rec.audioData], { type: rec.audioType || 'audio/mpeg' });
+    }
     return rec;
   }
 
@@ -150,5 +162,19 @@ function idbRequest(req, errorPrefix) {
   return new Promise((resolve, reject) => {
     req.onsuccess = e => resolve(e.target.result);
     req.onerror   = e => reject(new Error(`${errorPrefix}: ${e.target.error?.message}`));
+  });
+}
+
+/**
+ * Convert Blob/File to ArrayBuffer.
+ * iOS Safari < 14 does not support Blob.arrayBuffer(), so fall back to FileReader.
+ */
+function blobToArrayBuffer(blob) {
+  if (typeof blob.arrayBuffer === 'function') return blob.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'));
+    reader.readAsArrayBuffer(blob);
   });
 }
