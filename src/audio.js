@@ -68,12 +68,32 @@ export class AudioEngine {
 
   /**
    * Load an audio file ArrayBuffer and decode it.
+   * Uses callback form for maximum iOS Safari compatibility.
+   * (Older iOS Safari does not support the Promise-returning overload.)
    * @param {ArrayBuffer} arrayBuffer
    * @returns {Promise<void>}
    */
-  async loadAudioBuffer(arrayBuffer) {
+  loadAudioBuffer(arrayBuffer) {
     if (!this.ctx) this.init();
-    this._songBuffer = await this.ctx.decodeAudioData(arrayBuffer);
+    return new Promise((resolve, reject) => {
+      try {
+        this.ctx.decodeAudioData(
+          arrayBuffer,
+          (buffer) => {
+            this._songBuffer = buffer;
+            console.log(`[audio] decoded: ${buffer.duration.toFixed(1)}s`);
+            resolve();
+          },
+          (err) => {
+            const msg = (err && err.message) ? err.message : '対応していない音声形式です';
+            console.error('[audio] decodeAudioData failed:', err);
+            reject(new Error(`音声のデコードに失敗: ${msg}`));
+          }
+        );
+      } catch (e) {
+        reject(new Error(`音声ファイルを開けませんでした: ${e.message}`));
+      }
+    });
   }
 
   /**
@@ -124,6 +144,11 @@ export class AudioEngine {
   /** Whether an uploaded audio file is loaded and ready. */
   get hasUploadedAudio() {
     return this._songBuffer !== null;
+  }
+
+  /** Duration of the loaded song in milliseconds. 0 if nothing loaded. */
+  get songDurationMs() {
+    return this._songBuffer ? Math.floor(this._songBuffer.duration * 1000) : 0;
   }
 
   /** Clear the uploaded audio buffer (call when user discards the upload). */
