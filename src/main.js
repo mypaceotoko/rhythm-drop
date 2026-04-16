@@ -79,14 +79,16 @@ const el = {
   resultPerfect:       document.getElementById('result-perfect'),
   resultGood:          document.getElementById('result-good'),
   resultMiss:          document.getElementById('result-miss'),
+  btnUseDemo:          document.getElementById('btn-use-demo'),
 };
 
 // ---- App state ----
-let game           = null;
-let input          = null;
-let currentChart   = null;
+let game            = null;
+let input           = null;
+let currentChart    = null;
 let isTransitioning = false;
-let _pendingFile   = null;  // File オブジェクト（解析済み・保存用に保持）
+let _pendingFile    = null;  // File オブジェクト（解析済み・保存用に保持）
+let _builtinCharts  = null;  // initApp() で設定 → デモ曲リセットに使用
 let _isAnalyzing   = false; // 重複解析ガード
 
 // =========================================================
@@ -152,10 +154,11 @@ function getNeonCityChart() {
 // =========================================================
 
 function initApp() {
-  const builtinCharts = [
+  _builtinCharts = [
     normalizeChart(getDemoBeatChart()),
     normalizeChart(getNeonCityChart()),
   ];
+  const builtinCharts = _builtinCharts;
 
   const container = document.getElementById('song-selector');
   container.innerHTML = '';
@@ -669,6 +672,19 @@ el.btnSaveSong.addEventListener('click', async () => {
     btn.disabled    = false;
     btn.textContent = '💾 保存';
   }
+});
+
+// デモ曲に戻す
+el.btnUseDemo.addEventListener('click', () => {
+  if (!_builtinCharts) return;
+  // アップロード状態をすべてリセット
+  sharedAudio.clearUploadedAudio();
+  _pendingFile = null;
+  el.fileInput.value = '';
+  showDropZone();
+  // 最初の内蔵曲（Demo Beat）を選択
+  const container = document.getElementById('song-selector');
+  selectSong(_builtinCharts[0], 0, container);
 });
 
 // PLAY ボタン（内蔵曲 or 既に解析済みの曲）
