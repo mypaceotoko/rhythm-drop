@@ -17,7 +17,7 @@
   --text-dim: #888;
   --lane-w: 60px;
   --lane-gap: 4px;
-  --hit-line-y: 82%;       /* % from top of canvas area */
+  --hit-line-y: 82%;
   --note-h: 18px;
   --radius: 8px;
   --transition: 0.2s ease;
@@ -26,7 +26,7 @@
 /* ---------- Reset ---------- */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* hidden 属性を CSS の display 設定より優先させる（これがないと display:flex が hidden を上書きする） */
+/* hidden 属性を CSS の display 設定より優先させる（display:flex が hidden を上書きするのを防ぐ） */
 [hidden] { display: none !important; }
 
 html, body {
@@ -36,7 +36,11 @@ html, body {
   color: var(--text);
   font-family: 'Segoe UI', system-ui, sans-serif;
   -webkit-tap-highlight-color: transparent;
-  touch-action: none;
+  /*
+   * IMPORTANT: touch-action: none を body に設定してはいけない。
+   * iOS Safari では click イベントが発火しなくなり、ボタン等が全て反応しなくなる。
+   * touch-action: none はゲームキャンバスと #lane-overlay のみに設定する。
+   */
 }
 
 /* ---------- Screens ---------- */
@@ -60,9 +64,8 @@ html, body {
 /* ---------- Start Screen ---------- */
 #screen-start {
   background: radial-gradient(ellipse at center, #1a1040 0%, var(--bg) 70%);
-  /* コンテンツが画面より縦に長いときスクロールできるようにする */
   overflow-y: auto;
-  justify-content: flex-start; /* center だと上が見切れるので上揃えに */
+  justify-content: flex-start;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -70,14 +73,14 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  padding: 28px 20px 40px; /* 下に余白を足してスクロール末端を確保 */
+  gap: 12px;
+  padding: 16px 20px 32px;
   width: 100%;
   max-width: 420px;
 }
 
 .game-title {
-  font-size: clamp(2.5rem, 10vw, 4rem);
+  font-size: clamp(2rem, 9vw, 3.5rem);
   font-weight: 900;
   text-align: center;
   line-height: 1.1;
@@ -93,7 +96,7 @@ html, body {
 
 .subtitle {
   color: var(--text-dim);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   letter-spacing: 0.1em;
 }
 
@@ -101,11 +104,11 @@ html, body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px 24px;
+  padding: 12px 20px;
   width: 100%;
   text-align: center;
 }
-.song-name { font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; }
+.song-name { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
 .song-meta { display: flex; gap: 12px; justify-content: center; align-items: center; }
 .difficulty {
   padding: 2px 10px;
@@ -114,9 +117,9 @@ html, body {
   font-weight: 700;
   letter-spacing: 0.1em;
 }
-.difficulty.easy { background: #065f46; color: #6ee7b7; }
+.difficulty.easy   { background: #065f46; color: #6ee7b7; }
 .difficulty.normal { background: #1e3a8a; color: #93c5fd; }
-.difficulty.hard { background: #7f1d1d; color: #fca5a5; }
+.difficulty.hard   { background: #7f1d1d; color: #fca5a5; }
 
 .key-guide {
   text-align: center;
@@ -134,14 +137,18 @@ kbd {
   font-size: 0.85em;
   color: var(--accent2);
 }
+/* スマホでは鍵盤ガイドを非表示にしてスペースを節約 */
+@media (max-width: 480px) {
+  .key-guide { display: none; }
+}
 
 .upload-section {
   width: 100%;
   border-top: 1px solid var(--border);
-  padding-top: 16px;
+  padding-top: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 /* Divider with text */
@@ -166,7 +173,7 @@ kbd {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 20px 16px;
+  padding: 16px;
   border: 2px dashed var(--border);
   border-radius: var(--radius);
   cursor: pointer;
@@ -177,7 +184,7 @@ kbd {
   border-color: var(--accent);
   background: rgba(124,58,237,0.06);
 }
-.drop-icon { font-size: 2rem; line-height: 1; }
+.drop-icon { font-size: 1.8rem; line-height: 1; }
 .drop-main { font-size: 0.85rem; font-weight: 600; color: var(--text); }
 .drop-sub  { font-size: 0.7rem; color: var(--text-dim); margin-bottom: 4px; }
 
@@ -189,7 +196,7 @@ kbd {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 14px;
 }
 .upload-file-name {
   font-size: 0.8rem;
@@ -246,6 +253,30 @@ kbd {
   padding: 6px 4px;
 }
 
+/* Upload status: loading / success / error */
+.upload-status {
+  font-size: 0.8rem;
+  padding: 8px 10px;
+  border-radius: 6px;
+  text-align: center;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+.upload-status.loading {
+  color: var(--text-dim);
+  background: rgba(255,255,255,0.04);
+}
+.upload-status.success {
+  color: var(--good);
+  background: rgba(74,222,128,0.1);
+  border: 1px solid rgba(74,222,128,0.25);
+}
+.upload-status.error {
+  color: var(--miss);
+  background: rgba(248,113,113,0.1);
+  border: 1px solid rgba(248,113,113,0.25);
+}
+
 /* Loading state */
 .btn-loading {
   opacity: 0.7;
@@ -292,6 +323,7 @@ kbd {
   transition: border-color var(--transition), background var(--transition);
   min-width: 110px;
   text-align: left;
+  touch-action: manipulation; /* ダブルタップズームを防止しつつ click を維持 */
 }
 .song-tab:hover        { border-color: var(--accent); }
 .song-tab.active       { border-color: var(--accent); background: rgba(124,58,237,0.15); }
@@ -306,7 +338,7 @@ kbd {
   padding: 12px 32px;
   border-radius: var(--radius);
   font-size: 1rem;
-  touch-action: manipulation; /* ダブルタップズームを防止 */
+  touch-action: manipulation; /* ダブルタップズームを防止しつつ click を維持 */
   font-weight: 700;
   letter-spacing: 0.08em;
   cursor: pointer;
@@ -323,7 +355,7 @@ kbd {
   color: #fff;
   box-shadow: 0 0 20px rgba(124,58,237,0.5);
   width: 100%;
-  padding: 16px;
+  padding: 14px;
   font-size: 1.1rem;
 }
 .btn-primary:hover { box-shadow: 0 0 30px rgba(124,58,237,0.8); }
@@ -375,6 +407,7 @@ kbd {
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  position: relative; /* z-index が効くために必要 */
   z-index: 10;
 }
 .hud-left { display: flex; flex-direction: column; }
@@ -446,7 +479,7 @@ kbd {
   flex: 1;
   display: block;
   width: 100%;
-  touch-action: none;
+  touch-action: none; /* ゲームキャンバス上のスクロール・ズームを無効化 */
 }
 
 /* Lane overlay (for tap detection) */
@@ -456,9 +489,10 @@ kbd {
   left: 0; right: 0;
   display: flex;
   justify-content: center;
-  pointer-events: none;  /* JS assigns this dynamically */
+  pointer-events: none;
   z-index: 5;
   height: 100%;
+  touch-action: none; /* タッチをゲームが直接処理 */
 }
 .lane-btn {
   flex: 1;
@@ -466,6 +500,7 @@ kbd {
   cursor: pointer;
   pointer-events: all;
   -webkit-tap-highlight-color: transparent;
+  touch-action: none;
 }
 
 /* Effects layer */
@@ -513,6 +548,8 @@ kbd {
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   gap: 12px;
+  position: relative; /* z-index が効くために必要 */
+  z-index: 10;
 }
 #gauge-wrap {
   flex: 1;
