@@ -63,13 +63,6 @@
             <input type="text" id="input-title" class="setting-input" placeholder="曲名を入力" />
           </div>
           <div class="setting-row">
-            <label class="setting-label" for="input-bpm">BPM</label>
-            <div class="bpm-row">
-              <input type="range" id="input-bpm-range" min="60" max="240" value="120" class="bpm-range" />
-              <input type="number" id="input-bpm" class="setting-input bpm-num" value="120" min="60" max="240" />
-            </div>
-          </div>
-          <div class="setting-row">
             <label class="setting-label" for="input-difficulty">難易度</label>
             <select id="input-difficulty" class="setting-input">
               <option value="EASY">EASY</option>
@@ -77,12 +70,42 @@
               <option value="HARD">HARD</option>
             </select>
           </div>
-          <button class="btn btn-primary" id="btn-play-upload">この曲でプレイ</button>
+
+          <!-- ① 解析ボタン -->
+          <button class="btn btn-primary" id="btn-analyze">🎵 解析して譜面作成</button>
+
+          <!-- ② 解析中プログレス (hidden) -->
+          <div class="analysis-progress" id="analysis-progress" style="display:none">
+            <div class="analysis-bar-wrap">
+              <div class="analysis-bar-fill" id="analysis-bar-fill"></div>
+            </div>
+            <div class="analysis-status-text" id="analysis-status-text">解析中...</div>
+          </div>
+
+          <!-- ③ 解析完了後のアクション (hidden) -->
+          <div class="post-analysis-actions" id="post-analysis-actions" style="display:none">
+            <div class="analysis-result-info" id="analysis-result-info"></div>
+            <div class="post-btns">
+              <button class="btn btn-primary post-btn" id="btn-play-analyzed">▶ プレイ</button>
+              <button class="btn btn-secondary post-btn" id="btn-save-song">💾 保存</button>
+            </div>
+          </div>
+
           <button class="btn btn-ghost btn-sm" id="btn-cancel-upload" type="button">キャンセル</button>
-          <!-- ステータス表示: 読み込み中 / 成功 / エラー -->
+          <!-- ステータス表示: 保存中 / 成功 / エラー -->
           <div id="upload-status" class="upload-status" style="display:none"></div>
         </div>
       </div>
+
+      <!-- 保存済みの曲セクション (hidden when empty) -->
+      <div class="saved-section" id="saved-section" style="display:none">
+        <div class="saved-section-header">
+          <span class="saved-section-title">💾 保存済みの曲</span>
+          <span class="saved-count-badge" id="saved-count"></span>
+        </div>
+        <div class="saved-list" id="saved-list"></div>
+      </div>
+
     </div>
   </div>
 

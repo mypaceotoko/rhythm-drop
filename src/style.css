@@ -298,6 +298,132 @@ kbd {
   to { transform: rotate(360deg); }
 }
 
+/* ---------- Analysis progress ---------- */
+.analysis-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.analysis-bar-wrap {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.analysis-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+.analysis-status-text {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* ---------- Post-analysis actions ---------- */
+.post-analysis-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.analysis-result-info {
+  font-size: 0.78rem;
+  color: var(--good);
+  background: rgba(74,222,128,0.08);
+  border: 1px solid rgba(74,222,128,0.2);
+  border-radius: 6px;
+  padding: 8px 10px;
+  text-align: center;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+.post-btns {
+  display: flex;
+  gap: 8px;
+}
+.post-btn {
+  flex: 1;
+  padding: 12px 8px;
+  font-size: 0.95rem;
+}
+
+/* ---------- Saved songs section ---------- */
+.saved-section {
+  width: 100%;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.saved-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.saved-section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+}
+.saved-count-badge {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 8px;
+}
+.saved-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.saved-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  transition: border-color var(--transition);
+}
+.saved-item:hover { border-color: var(--accent); }
+.saved-item.active { border-color: var(--accent); background: rgba(124,58,237,0.10); }
+.saved-item-info {
+  flex: 1;
+  min-width: 0;
+}
+.saved-item-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.saved-item-meta {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.saved-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.btn-xs {
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  width: auto;
+  border-radius: 6px;
+}
+
 /* ---------- Song Selector ---------- */
 .song-selector {
   display: flex;
