@@ -208,6 +208,7 @@ function updateStartScreenInfo(chart) {
 
 async function startGame() {
   if (isTransitioning) return;
+  // currentChart が null の場合はデモ曲にフォールバック
   if (!currentChart) {
     console.warn('[startGame] currentChart is null, falling back to demo');
     currentChart = normalizeChart(getDemoBeatChart());

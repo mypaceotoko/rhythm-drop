@@ -40,7 +40,6 @@
       <div class="upload-section" id="upload-section">
         <div class="upload-divider"><span>または自分の曲でプレイ</span></div>
 
-        <!-- Hidden file input: use label association for mobile compatibility -->
         <!-- accept に拡張子を明示: iOS Safari は audio/* だけだと MP3 等が選択不可になる -->
         <input type="file" id="file-input"
                accept=".mp3,.wav,.ogg,.aac,.m4a,.flac,.opus,audio/mpeg,audio/wav,audio/ogg,audio/aac,audio/mp4,audio/flac,audio/x-flac"
@@ -54,7 +53,7 @@
           <div class="drop-icon">🎵</div>
           <p class="drop-main">音楽ファイルをドロップ</p>
           <p class="drop-sub">MP3 / WAV / OGG / AAC</p>
-          <!-- label + for= が最もモバイル互換性の高いファイル選択方法 -->
+          <!-- label + for= が最もモバイル互换性の高いファイル選択方法 -->
           <label class="btn btn-secondary" id="btn-upload" for="file-input">ファイルを選ぶ</label>
         </div>
 
