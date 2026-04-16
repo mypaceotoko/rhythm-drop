@@ -212,7 +212,10 @@ export class Game {
 
     // Check if all notes are judged
     if (this._judgedCount >= this.chart.totalNotes && songTime > 1000) {
-      this._endGame();
+      // For uploaded audio, wait until near the end of the track before ending
+      if (!this.chart.audioDurationMs || songTime >= duration - 2000) {
+        this._endGame();
+      }
     }
   }
 
