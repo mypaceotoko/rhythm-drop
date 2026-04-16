@@ -8,10 +8,12 @@
  *  4. decodeAudioData は callback 形式を使用（古い iOS Safari は Promise 非対応）
  */
 
-import { Game } from './game.js';
-import { InputManager } from './input.js';
-import { AudioEngine } from './audio.js';
-import { normalizeChart, generateBPMChart } from './chart.js';
+import { Game }                                       from './game.js';
+import { InputManager }                               from './input.js';
+import { AudioEngine }                                from './audio.js';
+import { normalizeChart, generateBPMChart,
+         buildChartFromAnalysis }                     from './chart.js';
+import { analyzeAudio }                               from './analyzer.js';
 
 // ---- Shared audio engine ----
 const sharedAudio = new AudioEngine();
@@ -24,51 +26,62 @@ const screens = {
   result: document.getElementById('screen-result'),
 };
 const el = {
-  canvas:          document.getElementById('game-canvas'),
-  scoreDisplay:    document.getElementById('score-display'),
-  comboDisplay:    document.getElementById('combo-display'),
-  comboNumber:     document.getElementById('combo-number'),
-  judgmentDisplay: document.getElementById('judgment-display'),
-  gaugeFill:       document.getElementById('gauge-fill'),
-  progressBar:     document.getElementById('progress-bar'),
-  laneOverlay:     document.getElementById('lane-overlay'),
-  effectsLayer:    document.getElementById('effects-layer'),
-  hudSongName:     document.getElementById('hud-song-name'),
-  hudDifficulty:   document.getElementById('hud-difficulty'),
-  btnStart:        document.getElementById('btn-start'),
-  fileInput:       document.getElementById('file-input'),
-  dropZone:        document.getElementById('drop-zone'),
-  uploadSettings:  document.getElementById('upload-settings'),
-  uploadFilename:  document.getElementById('upload-filename'),
-  uploadStatus:    document.getElementById('upload-status'),
-  inputTitle:      document.getElementById('input-title'),
-  inputBpm:        document.getElementById('input-bpm'),
-  inputBpmRange:   document.getElementById('input-bpm-range'),
-  inputDifficulty: document.getElementById('input-difficulty'),
-  btnPlayUpload:   document.getElementById('btn-play-upload'),
-  btnCancelUpload: document.getElementById('btn-cancel-upload'),
-  btnPause:        document.getElementById('btn-pause'),
-  btnRetry:        document.getElementById('btn-retry'),
-  btnResume:       document.getElementById('btn-resume'),
-  btnPauseRetry:   document.getElementById('btn-pause-retry'),
-  btnPauseQuit:    document.getElementById('btn-pause-quit'),
-  btnResultRetry:  document.getElementById('btn-result-retry'),
-  btnResultQuit:   document.getElementById('btn-result-quit'),
-  resultTitle:     document.getElementById('result-title'),
-  resultGrade:     document.getElementById('result-grade'),
-  resultSongName:  document.getElementById('result-song-name'),
-  resultScore:     document.getElementById('result-score'),
-  resultCombo:     document.getElementById('result-combo'),
-  resultPerfect:   document.getElementById('result-perfect'),
-  resultGood:      document.getElementById('result-good'),
-  resultMiss:      document.getElementById('result-miss'),
+  canvas:              document.getElementById('game-canvas'),
+  scoreDisplay:        document.getElementById('score-display'),
+  comboDisplay:        document.getElementById('combo-display'),
+  comboNumber:         document.getElementById('combo-number'),
+  judgmentDisplay:     document.getElementById('judgment-display'),
+  gaugeFill:           document.getElementById('gauge-fill'),
+  progressBar:         document.getElementById('progress-bar'),
+  laneOverlay:         document.getElementById('lane-overlay'),
+  effectsLayer:        document.getElementById('effects-layer'),
+  hudSongName:         document.getElementById('hud-song-name'),
+  hudDifficulty:       document.getElementById('hud-difficulty'),
+  btnStart:            document.getElementById('btn-start'),
+  // Upload
+  fileInput:           document.getElementById('file-input'),
+  dropZone:            document.getElementById('drop-zone'),
+  uploadSettings:      document.getElementById('upload-settings'),
+  uploadFilename:      document.getElementById('upload-filename'),
+  uploadStatus:        document.getElementById('upload-status'),
+  inputTitle:          document.getElementById('input-title'),
+  inputDifficulty:     document.getElementById('input-difficulty'),
+  btnAnalyze:          document.getElementById('btn-analyze'),
+  btnCancelUpload:     document.getElementById('btn-cancel-upload'),
+  // Analysis progress
+  analysisProgress:    document.getElementById('analysis-progress'),
+  analysisBarFill:     document.getElementById('analysis-bar-fill'),
+  analysisStatusText:  document.getElementById('analysis-status-text'),
+  // Post-analysis
+  postAnalysisActions: document.getElementById('post-analysis-actions'),
+  analysisResultInfo:  document.getElementById('analysis-result-info'),
+  btnPlayAnalyzed:     document.getElementById('btn-play-analyzed'),
+  btnSaveSong:         document.getElementById('btn-save-song'),
+  // Game controls
+  btnPause:            document.getElementById('btn-pause'),
+  btnRetry:            document.getElementById('btn-retry'),
+  btnResume:           document.getElementById('btn-resume'),
+  btnPauseRetry:       document.getElementById('btn-pause-retry'),
+  btnPauseQuit:        document.getElementById('btn-pause-quit'),
+  btnResultRetry:      document.getElementById('btn-result-retry'),
+  btnResultQuit:       document.getElementById('btn-result-quit'),
+  resultTitle:         document.getElementById('result-title'),
+  resultGrade:         document.getElementById('result-grade'),
+  resultSongName:      document.getElementById('result-song-name'),
+  resultScore:         document.getElementById('result-score'),
+  resultCombo:         document.getElementById('result-combo'),
+  resultPerfect:       document.getElementById('result-perfect'),
+  resultGood:          document.getElementById('result-good'),
+  resultMiss:          document.getElementById('result-miss'),
 };
 
 // ---- App state ----
-let game = null;
-let input = null;
-let currentChart = null;
+let game           = null;
+let input          = null;
+let currentChart   = null;
 let isTransitioning = false;
+let _pendingFile   = null;  // File オブジェクト（解析済み・保存用に保持）
+let _isAnalyzing   = false; // 重複解析ガード
 
 // =========================================================
 // 内蔵曲データ（インライン定義 = fetch 不要・即時利用可能）
@@ -76,7 +89,7 @@ let isTransitioning = false;
 
 function getDemoBeatChart() {
   const bpm = 140;
-  const beat = (60 / bpm) * 1000; // ≈ 428ms
+  const beat = (60 / bpm) * 1000;
   const pattern = [
     [0,2],[1,2],[2,0],[2,4],[3,2],[3.5,1],[4,3],
     [4,2],[5,0],[5,4],[6,2],[7,1],[7,3],
@@ -129,7 +142,7 @@ function getNeonCityChart() {
 }
 
 // =========================================================
-// 起動処理（同期・即時実行）
+// 起動処理
 // =========================================================
 
 function initApp() {
@@ -148,7 +161,6 @@ function initApp() {
       <span class="song-tab-title">${chart.title}</span>
       <span class="song-tab-meta">BPM ${chart.bpm} · ${chart.difficulty}</span>
     `;
-    // touchstart: iOS で click より先に発火（0ms レイテンシ）
     tab.addEventListener('touchstart', (e) => {
       e.preventDefault();
       selectSong(chart, idx, container);
@@ -184,7 +196,6 @@ function updateStartScreenInfo(chart) {
 
 async function startGame() {
   if (isTransitioning) return;
-  // currentChart が null の場合はデモ曲にフォールバック
   if (!currentChart) {
     console.warn('[startGame] currentChart is null, falling back to demo');
     currentChart = normalizeChart(getDemoBeatChart());
@@ -231,17 +242,8 @@ async function startGame() {
   }
 }
 
-function pauseGame() {
-  if (!game) return;
-  game.pause();
-  if (input) input.reset();
-  showScreen('pause');
-}
-function resumeGame() {
-  if (!game) return;
-  showScreen('game');
-  game.resume();
-}
+function pauseGame()  { if (!game) return; game.pause(); if (input) input.reset(); showScreen('pause'); }
+function resumeGame() { if (!game) return; showScreen('game'); game.resume(); }
 async function retryGame() {
   if (isTransitioning) return;
   sharedAudio.init();
@@ -290,37 +292,146 @@ function showResult({ score, maxCombo, counts, grade, title }) {
 }
 
 // =========================================================
-// ファイルアップロード
+// アップロード UI ヘルパー
 // =========================================================
 
-/** アップロードステータス表示の更新 */
 function setUploadStatus(type, message) {
   if (!el.uploadStatus) return;
   el.uploadStatus.textContent = message;
-  el.uploadStatus.className = type ? `upload-status ${type}` : 'upload-status';
+  el.uploadStatus.className   = type ? `upload-status ${type}` : 'upload-status';
   el.uploadStatus.style.display = message ? '' : 'none';
 }
 
 function showDropZone() {
-  el.dropZone.style.display       = '';
-  el.uploadSettings.style.display = 'none';
+  el.dropZone.style.display            = '';
+  el.uploadSettings.style.display      = 'none';
+  el.analysisProgress.style.display    = 'none';
+  el.postAnalysisActions.style.display = 'none';
   setUploadStatus('', '');
+  _pendingFile = null;
 }
+
 function showUploadSettings(file) {
-  el.uploadFilename.textContent   = file.name;
-  el.inputTitle.value             = file.name.replace(/\.[^/.]+$/, '');
-  el.dropZone.style.display       = 'none';
-  el.uploadSettings.style.display = 'flex';
+  _pendingFile                        = file;
+  el.uploadFilename.textContent       = file.name;
+  el.inputTitle.value                 = file.name.replace(/\.[^/.]+$/, '');
+  el.dropZone.style.display           = 'none';
+  el.uploadSettings.style.display     = 'flex';
+  el.analysisProgress.style.display   = 'none';
+  el.postAnalysisActions.style.display = 'none';
+  el.btnAnalyze.disabled              = false;
+  el.btnAnalyze.textContent           = '🎵 解析して譜面作成';
   setUploadStatus('', '');
 }
+
+// 解析進捗バーを更新（0..1）
+function setAnalysisProgress(ratio, statusText) {
+  el.analysisBarFill.style.width      = `${Math.round(ratio * 100)}%`;
+  el.analysisStatusText.textContent   = statusText;
+}
+
+// =========================================================
+// 音声解析フロー（Step 1 メイン実装）
+// =========================================================
+
+async function handleAnalyze() {
+  if (_isAnalyzing) return;
+  const file = _pendingFile || el.fileInput.files[0];
+  if (!file) return;
+
+  // ★ iOS Safari 必須: AudioContext を click の同期コード内で init
+  sharedAudio.init();
+
+  const title      = el.inputTitle.value.trim() || file.name.replace(/\.[^/.]+$/, '');
+  const difficulty = el.inputDifficulty.value;
+
+  // UI: 解析開始
+  _isAnalyzing                         = true;
+  el.btnAnalyze.disabled               = true;
+  el.btnAnalyze.textContent            = '解析中...';
+  el.analysisProgress.style.display    = '';
+  el.postAnalysisActions.style.display = 'none';
+  setAnalysisProgress(0, 'ファイルを読み込んでいます...');
+  setUploadStatus('', '');
+
+  try {
+    // 1. AudioContext を resume（iOS ではユーザー操作後に resume が必要）
+    await sharedAudio.resume();
+
+    // 2. ファイルを ArrayBuffer として読み込む
+    setAnalysisProgress(0.03, 'デコード中...');
+    const arrayBuffer = await file.arrayBuffer();
+
+    // 3. Web Audio API でデコード（callback 形式 → iOS Safari 互換）
+    await sharedAudio.loadAudioBuffer(arrayBuffer);
+    const audioBuffer = sharedAudio.audioBuffer;
+    if (!audioBuffer) throw new Error('音声のデコードに失敗しました');
+
+    const durationSec = audioBuffer.duration;
+    if (durationSec < 0.5) throw new Error('音声ファイルが短すぎます');
+
+    // 4. 音声解析（進捗コールバック付き）
+    setAnalysisProgress(0.05, `解析中... (${Math.round(durationSec)}秒の曲)`);
+
+    const analysis = await analyzeAudio(audioBuffer, (p) => {
+      // analyzeAudio の進捗は 0..1 → UI は 5%〜90% にマッピング
+      const mapped = 0.05 + p * 0.85;
+      const pct    = Math.round(p * 100);
+      let label    = '解析中...';
+      if (p < 0.10) label = 'フィルタリング中...';
+      else if (p < 0.65) label = `エネルギー解析中... ${pct}%`;
+      else if (p < 0.78) label = `オンセット検出中... ${pct}%`;
+      else if (p < 0.88) label = 'マージ処理中...';
+      else               label = 'BPM推定中...';
+      setAnalysisProgress(mapped, label);
+    });
+
+    // 5. 解析結果から譜面生成
+    setAnalysisProgress(0.92, '譜面を生成中...');
+    const rawChart  = buildChartFromAnalysis(analysis, { title, difficulty });
+    currentChart    = normalizeChart(rawChart);
+    updateStartScreenInfo(currentChart);
+
+    // 6. 完了表示
+    setAnalysisProgress(1.0, '完了');
+    const durMin  = Math.floor(durationSec / 60);
+    const durSec2 = Math.floor(durationSec % 60);
+    el.analysisResultInfo.textContent =
+      `✓ 解析完了\n` +
+      `BPM ${analysis.bpm}  /  ${String(durMin).padStart(2,'0')}:${String(durSec2).padStart(2,'0')}` +
+      `  /  ${currentChart.totalNotes} ノーツ (${difficulty})`;
+    el.postAnalysisActions.style.display = '';
+
+  } catch (err) {
+    console.error('[analyze] error:', err);
+    const msg = err.message || '不明なエラー';
+    setUploadStatus('error', `解析失敗: ${msg}\n対応形式: MP3 / WAV / OGG / AAC`);
+    el.analysisProgress.style.display = 'none';
+
+    // フォールバック: デモ曲
+    sharedAudio.clearUploadedAudio();
+    if (!currentChart) currentChart = normalizeChart(getDemoBeatChart());
+
+  } finally {
+    _isAnalyzing            = false;
+    el.btnAnalyze.disabled  = false;
+    el.btnAnalyze.textContent = '🎵 解析して譜面作成';
+  }
+}
+
+// =========================================================
+// ファイルアップロード
+// =========================================================
 
 el.fileInput.addEventListener('change', () => {
   const file = el.fileInput.files[0];
   if (file) showUploadSettings(file);
 });
+
 el.btnCancelUpload.addEventListener('click', () => {
   el.fileInput.value = '';
   sharedAudio.clearUploadedAudio();
+  _pendingFile = null;
   showDropZone();
 });
 
@@ -332,87 +443,8 @@ el.dropZone.addEventListener('drop', (e) => {
   el.dropZone.classList.remove('drag-over');
   const file = e.dataTransfer.files[0];
   if (file && file.type.startsWith('audio/')) {
-    try {
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      el.fileInput.files = dt.files;
-    } catch (_) {}
+    try { const dt = new DataTransfer(); dt.items.add(file); el.fileInput.files = dt.files; } catch (_) {}
     showUploadSettings(file);
-  }
-});
-
-// BPM スライダー ↔ 数値入力 連動
-el.inputBpmRange.addEventListener('input', () => { el.inputBpm.value = el.inputBpmRange.value; });
-el.inputBpm.addEventListener('input', () => {
-  el.inputBpmRange.value = Math.max(60, Math.min(240, parseInt(el.inputBpm.value) || 120));
-});
-
-// アップロード曲でプレイ
-el.btnPlayUpload.addEventListener('click', async () => {
-  const file = el.fileInput.files[0];
-  if (!file) return;
-
-  // ★ iOS Safari 必須: AudioContext を click の同期コード内で init
-  sharedAudio.init();
-
-  const title      = el.inputTitle.value.trim() || file.name.replace(/\.[^/.]+$/, '');
-  const bpm        = Math.max(60, Math.min(240, parseInt(el.inputBpm.value) || 120));
-  const difficulty = el.inputDifficulty.value;
-
-  el.btnPlayUpload.disabled = true;
-  el.btnPlayUpload.classList.add('btn-loading');
-  el.btnPlayUpload.textContent = '読み込み中';
-  setUploadStatus('loading', '音楽ファイルを読み込んでいます...');
-
-  try {
-    // AudioContext を resume（iOS ではユーザー操作後に resume が必要）
-    await sharedAudio.resume();
-
-    // ファイルを ArrayBuffer として読み込む
-    const arrayBuffer = await file.arrayBuffer();
-
-    // Web Audio API でデコード（callback 形式 → iOS Safari 互換）
-    await sharedAudio.loadAudioBuffer(arrayBuffer);
-
-    // 音声の長さを公開 getter で取得（private field への直接アクセス不要）
-    const durationMs = sharedAudio.songDurationMs;
-    if (!durationMs || durationMs < 500) {
-      throw new Error('音声ファイルの長さを取得できませんでした（破損または未対応形式）');
-    }
-
-    // BPM ベースで譜面を自動生成
-    const rawChart = generateBPMChart({ title, bpm, durationMs, difficulty });
-    currentChart = normalizeChart(rawChart);
-    updateStartScreenInfo(currentChart);
-
-    setUploadStatus('success',
-      `読み込み完了 ✓\n${Math.round(durationMs / 1000)}秒 / ${currentChart.totalNotes}ノーツ生成`);
-
-    // 成功表示を見せてからゲーム開始
-    await new Promise(r => setTimeout(r, 700));
-    showDropZone();
-    el.fileInput.value = '';
-    await startGame();
-
-  } catch (err) {
-    console.error('[upload] error:', err);
-
-    // エラー内容をインライン表示（アプリはクラッシュしない）
-    const userMsg = err.message || '不明なエラー';
-    setUploadStatus('error',
-      `読み込み失敗: ${userMsg}\n対応形式: MP3 / WAV / OGG / AAC`);
-
-    // アップロード状態をリセット、デモ曲で続行可能にする
-    sharedAudio.clearUploadedAudio();
-    if (!currentChart) {
-      currentChart = normalizeChart(getDemoBeatChart());
-      updateStartScreenInfo(currentChart);
-    }
-
-  } finally {
-    el.btnPlayUpload.disabled = false;
-    el.btnPlayUpload.classList.remove('btn-loading');
-    el.btnPlayUpload.textContent = 'この曲でプレイ';
   }
 });
 
@@ -420,11 +452,37 @@ el.btnPlayUpload.addEventListener('click', async () => {
 // ボタン配線
 // =========================================================
 
-// PLAY ボタン
-// touchstart を先に登録: iOS で 0ms レイテンシ、確実に反応
+// 解析ボタン
+el.btnAnalyze.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  handleAnalyze();
+}, { passive: false });
+el.btnAnalyze.addEventListener('click', handleAnalyze);
+
+// 解析後: プレイボタン
+el.btnPlayAnalyzed.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  sharedAudio.init();
+  showDropZone();
+  el.fileInput.value = '';
+  startGame();
+}, { passive: false });
+el.btnPlayAnalyzed.addEventListener('click', () => {
+  sharedAudio.init();
+  showDropZone();
+  el.fileInput.value = '';
+  startGame();
+});
+
+// 解析後: 保存ボタン（Step 2 で実装）
+el.btnSaveSong.addEventListener('click', () => {
+  setUploadStatus('loading', '保存機能は Step 2 で実装予定です');
+});
+
+// PLAY ボタン（内蔵曲 or 既に解析済みの曲）
 el.btnStart.addEventListener('touchstart', (e) => {
   e.preventDefault();
-  sharedAudio.init(); // 必ず同期で呼ぶ（iOS Safari の AudioContext unlock）
+  sharedAudio.init();
   startGame();
 }, { passive: false });
 el.btnStart.addEventListener('click', () => {
@@ -432,6 +490,7 @@ el.btnStart.addEventListener('click', () => {
   startGame();
 });
 
+// ゲーム操作
 el.btnPause.addEventListener('click',       pauseGame);
 el.btnRetry.addEventListener('click',       retryGame);
 el.btnResume.addEventListener('click',      resumeGame);
